@@ -1,11 +1,30 @@
 {
   "name": "event-sync",
-  "version": "0.0.1",
-  "description": "offline first distributed event sourcing library",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
   "author": "@mrloh",
-  "license": "MIT"
+  "license": "MIT",
+  "version": "0.1.0",
+  "description": "offline first distributed event sourcing library",
+  "source": "index.ts",
+  "react-native": "index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "@babel/runtime": "^7.17.9",
+    "@types/jest": "^27.0.3",
+    "jest": "^27.4.5",
+    "rxjs": "^7.8.1",
+    "ts-jest": "^27.1.2",
+    "typescript": "^4.9.5",
+    "zod": "^3.21.4"
+  },
+  "peerDependencies": {
+    "rxjs": "^7.8.1",
+    "zod": "^3.21.4"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node"
+  }
 }
