@@ -1,0 +1,11 @@
+{
+  "name": "event-sync",
+  "version": "0.0.1",
+  "description": "offline first distributed event sourcing library",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "@mrloh",
+  "license": "MIT"
+}
