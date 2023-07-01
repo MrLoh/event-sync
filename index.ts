@@ -1,18 +1,7 @@
 import { BehaviorSubject, Subject, filter, interval, throttleTime, merge } from 'rxjs';
 
-import { InvalidInputError, StorageError, UnauthorizedError } from './errors';
-
-const tryCatch = async <T>(
-  fn: () => T
-): Promise<{ res: undefined; err: Error } | { res: Awaited<T>; err: undefined }> => {
-  try {
-    const res = await fn();
-    return { res, err: undefined };
-  } catch (err: any) {
-    if (!(err instanceof Error)) err = new Error(`Unexpected throw value: ${err}`);
-    return { res: undefined, err };
-  }
-};
+import { InvalidInputError, StorageError, UnauthorizedError } from './utils/errors';
+import { tryCatch } from './utils/try-catch';
 
 export type AggregateEvent<A> = {
   id: string;
@@ -187,8 +176,8 @@ export const createBroker = <R extends string>({
       repository,
     }: {
       reducer: (state: S, event: E) => S;
-      parseEvent: (event: any) => E;
       authorizer: (event: E, account?: { id: string; roles: R[] } | null) => boolean;
+      parseEvent: (event: any) => E;
       selectLastEventId: (state: S, aggregateId: string) => string;
       repository: AggregateRepository<S>;
     }

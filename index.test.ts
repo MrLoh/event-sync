@@ -1,6 +1,6 @@
 import { z, ZodError } from 'zod';
 import { createBroker, AggregateEvent } from '.';
-import { InvalidInputError, NotFoundError, StorageError, UnauthorizedError } from './errors';
+import { InvalidInputError, NotFoundError, StorageError, UnauthorizedError } from './utils/errors';
 
 describe('event sync', () => {
   // Given an id creator
