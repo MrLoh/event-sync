@@ -1,0 +1,31 @@
+name: Test
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🚚 Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: ⚙️ Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18.x
+          cache: yarn
+
+      - name: 📦 Install Dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: 👌 Typecheck
+        run: yarn typecheck
+
+      - name: 🧪 Run Tests
+        run: yarn test
+  
+  
