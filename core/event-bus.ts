@@ -3,6 +3,13 @@ import type { AnyAggregateEvent } from '../utils/types';
 
 export type EventBus<E extends AnyAggregateEvent = AnyAggregateEvent> = {
   /**
+   * dispatch an event to the event bus
+   *
+   * @param event the event to dispatch
+   */
+  dispatch: (event: E) => void;
+
+  /**
    * will call the subscriber with previously dispatched events and for all future events
    *
    * @param subscriber the function to call when an event is dispatched
@@ -10,17 +17,22 @@ export type EventBus<E extends AnyAggregateEvent = AnyAggregateEvent> = {
    */
   subscribe: (subscriber: (event: E) => void) => () => void;
   /**
-   * dispatch an event to the event bus
+   * setup an error handler for when the event bus is terminated with an error. If no error handler
+   * is registered, the error will be thrown in the global scope.
    *
-   * @param event the event to dispatch
+   * @param callback the function to call when an error occurs
    */
-  dispatch: (event: E) => void;
+  terminate: (error?: Error) => void;
   /**
-   * terminate the subject underlying the event bus with an error
+   * terminate the event bus because an error occurred or because the event bus is no longer needed
    *
    * @param error the terminal error that occurred
    */
-  error: (error: Error) => void;
+  onTermination(callback: (error?: Error) => void): void;
+  /**
+   * whether the event bus has been terminated
+   */
+  terminated: boolean;
   /**
    * reset the event bus preventing any past events to be replayed to subscribers
    */
@@ -34,32 +46,46 @@ export type EventBus<E extends AnyAggregateEvent = AnyAggregateEvent> = {
  */
 export const createEventBus = <E extends AnyAggregateEvent = AnyAggregateEvent>(): EventBus<E> => {
   const resetter = new Subject<null>();
-  const source = new Subject<E>();
+  let source = new Subject<E>();
   let destination = new ReplaySubject<E>();
   let subscription = source.subscribe(destination);
+  const emitter = resetter.asObservable().pipe(
+    startWith(null),
+    switchMap(() => destination)
+  );
+  let terminated = false;
+  // if no error handler is provided, throw error if terminated with error
+  const defaultErrorSubscription = emitter.subscribe({
+    error: (error: Error) => {
+      // istanbul ignore next -- cannot test global errors
+      throw error;
+    },
+  });
   return {
     dispatch: (event: E) => {
+      if (terminated) throw new Error('cannot dispatch, event bus has been terminated');
       source.next(event);
     },
-    error: (error: Error) => {
-      source.error(error);
+    terminate: (error?: Error) => {
+      terminated = true;
+      if (error) source.error(error);
+      else source.complete();
     },
     subscribe: (subscriber: (event: E) => void) => {
-      const subscription = resetter
-        .asObservable()
-        .pipe(
-          startWith(null),
-          switchMap(() => destination)
-        )
-        .subscribe({
-          next: (event) => subscriber(event),
-          error: (error) => {
-            throw error;
-          },
-        });
-      return subscription.unsubscribe;
+      return emitter.subscribe({ next: subscriber, error: () => {} }).unsubscribe;
+    },
+    onTermination: (callback: (error?: Error) => void) => {
+      defaultErrorSubscription.unsubscribe();
+      emitter.subscribe({ error: callback, complete: callback });
+    },
+    get terminated() {
+      return terminated;
     },
     reset: () => {
+      if (terminated) {
+        source = new Subject<E>();
+        terminated = false;
+      }
       subscription.unsubscribe();
       destination = new ReplaySubject<E>();
       subscription = source.subscribe(destination);

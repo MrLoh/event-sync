@@ -1,6 +1,5 @@
 import { createEventBus } from './event-bus';
 import type { AnyAggregateEvent } from '../utils/types';
-import type { EventBus } from './event-bus';
 
 describe('event bus', () => {
   let eventSequence = 0;
@@ -14,16 +13,9 @@ describe('event bus', () => {
     dispatchedAt: new Date(),
   });
 
-  let eventBus: EventBus;
-  beforeEach(() => {
-    eventBus = createEventBus();
-  });
-  afterEach(() => {
-    eventBus.reset();
-  });
-
   it('relays dispatched events to subscriber', () => {
-    // Given a subscriber to the event bus
+    // Given an event bus with a subscriber
+    const eventBus = createEventBus();
     const subscriber = jest.fn();
     eventBus.subscribe(subscriber);
     // When an event is dispatched
@@ -35,7 +27,8 @@ describe('event bus', () => {
   });
 
   it('supports multiple subscribers', () => {
-    // Given two subscribers to the event bus
+    // Given an event bus with two subscriber
+    const eventBus = createEventBus();
     const subscriber1 = jest.fn();
     eventBus.subscribe(subscriber1);
     const subscriber2 = jest.fn();
@@ -51,7 +44,8 @@ describe('event bus', () => {
   });
 
   it('replays past events to new subscribers', () => {
-    // Given a few events have been dispatched already
+    // Given an event bus to which a few events have been dispatched already
+    const eventBus = createEventBus();
     const testEvents = [createEvent(), createEvent()];
     eventBus.dispatch(testEvents[0]);
     eventBus.dispatch(testEvents[1]);
@@ -65,7 +59,8 @@ describe('event bus', () => {
   });
 
   it('can reset replay behavior', () => {
-    // Given a few events where dispatched
+    // Given an event bus to which a few events have been dispatched already
+    const eventBus = createEventBus();
     eventBus.dispatch(createEvent());
     eventBus.dispatch(createEvent());
     // And the event bus has been reset
@@ -80,4 +75,57 @@ describe('event bus', () => {
     expect(subscriber).toHaveBeenCalledTimes(1);
     expect(subscriber).toHaveBeenCalledWith(testEvent);
   });
+
+  it('can be terminated', async () => {
+    // Given an event bus with a subscriber
+    const eventBus = createEventBus();
+    const subscriber = jest.fn();
+    eventBus.subscribe(subscriber);
+    // When the event bus is terminated
+    eventBus.terminate();
+    // Then the subscriber is not called anymore
+    const testEvent = createEvent();
+    expect(() => eventBus.dispatch(testEvent)).toThrowError();
+    expect(subscriber).not.toHaveBeenCalled();
+    // And the event bus is marked as terminated
+    expect(eventBus.terminated).toBe(true);
+  });
+
+  it('calls termination handler with error', () => {
+    // Given an event bus with an error handler and a subscriber
+    const eventBus = createEventBus();
+    const errorHandler = jest.fn();
+    eventBus.onTermination(errorHandler);
+    const subscriber = jest.fn();
+    eventBus.subscribe(subscriber);
+    // When the event bus is terminated with an error
+    const testError = new Error('test');
+    eventBus.terminate(testError);
+    // Then the error handler is called
+    expect(errorHandler).toHaveBeenCalledTimes(1);
+    expect(errorHandler).toHaveBeenCalledWith(testError);
+    // And the event bus is terminated
+    const testEvent = createEvent();
+    expect(() => eventBus.dispatch(testEvent)).toThrowError();
+    expect(subscriber).not.toHaveBeenCalled();
+  });
+
+  it('can receive new events when reset after termination', () => {
+    // Given an event bus with a subscriber that has been terminated
+    const eventBus = createEventBus();
+    const subscriber = jest.fn();
+    eventBus.subscribe(subscriber);
+    eventBus.terminate();
+    expect(eventBus.terminated).toBe(true);
+    // When the event bus is reset
+    eventBus.reset();
+    // Then the event bus is not terminated anymore
+    expect(eventBus.terminated).toBe(false);
+    // And the subscriber can receive new events
+    const testEvent = createEvent();
+    eventBus.dispatch(testEvent);
+    expect(subscriber).toHaveBeenCalledTimes(1);
+    expect(subscriber).toHaveBeenCalledWith(testEvent);
+  });
+
 });
