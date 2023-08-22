@@ -8,43 +8,12 @@ import {
   createFakeAggregateRepository,
   createFakeEventsRepository,
 } from '../utils/fakes';
-import type { AnyAggregateEvent, BaseState } from '../utils/types';
+import type { AnyAggregateEvent, BaseState, AggregateRepository } from '../utils/types';
 import type { Account } from '../utils/fakes';
-import type { AggregateRepository } from './store';
 
 describe('store', () => {
   const profileSchema = z.object({ name: z.string().min(2) });
   type Profile = z.infer<typeof profileSchema>;
-
-  const profileCommands = {
-    create: {
-      eventType: 'CREATED',
-      operation: 'create' as const,
-      payloadSchema: profileSchema,
-      policy: (account: Account | null) => account?.roles.includes('creator') ?? false,
-      construct: ({ name }: Profile) => ({ name }),
-      reduce: undefined,
-      destruct: undefined,
-    },
-    update: {
-      eventType: 'UPDATED',
-      operation: 'update' as const,
-      payloadSchema: profileSchema.partial(),
-      policy: (account: Account | null) => account?.roles.includes('updater') ?? false,
-      construct: undefined,
-      reduce: (state: Profile, payload: Partial<Profile>) => ({ ...state, ...payload }),
-      destruct: undefined,
-    },
-    delete: {
-      eventType: 'DELETED',
-      operation: 'delete' as const,
-      payloadSchema: z.undefined(),
-      policy: (account: Account | null) => account?.roles.includes('updater') ?? false,
-      construct: undefined,
-      reduce: undefined,
-      destruct: () => {},
-    },
-  };
 
   const setup = (repository?: AggregateRepository<Profile & BaseState>) => {
     const aggregateRepository = repository || createFakeAggregateRepository<Profile & BaseState>();
@@ -58,7 +27,29 @@ describe('store', () => {
       {
         aggregateType: 'PROFILE',
         aggregateSchema: profileSchema,
-        commands: profileCommands,
+        commands: {
+          create: {
+            eventType: 'CREATED',
+            operation: 'create' as const,
+            payloadSchema: profileSchema,
+            policy: (account: Account | null) => account?.roles.includes('creator') ?? false,
+            construct: ({ name }: Profile) => ({ name }),
+          },
+          update: {
+            eventType: 'UPDATED',
+            operation: 'update' as const,
+            payloadSchema: profileSchema.partial(),
+            policy: (account: Account | null) => account?.roles.includes('updater') ?? false,
+            reduce: (state: Profile, payload: Partial<Profile>) => ({ ...state, ...payload }),
+          },
+          delete: {
+            eventType: 'DELETED',
+            operation: 'delete' as const,
+            payloadSchema: z.undefined(),
+            policy: (account: Account | null) => account?.roles.includes('updater') ?? false,
+            destruct: () => {},
+          },
+        },
         repository: aggregateRepository,
       },
       context

@@ -1,6 +1,5 @@
 import { NotFoundError } from '../utils/errors';
-import type { AnyAggregateEvent, BaseState, EventsRepository } from './types';
-import type { AggregateRepository } from '../core/store';
+import type { AggregateRepository, AnyAggregateEvent, BaseState, EventsRepository } from './types';
 
 export type Role = 'creator' | 'updater';
 export type Account = { id: string; roles: Role[] };

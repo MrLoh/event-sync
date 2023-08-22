@@ -12,47 +12,8 @@ import type {
   Operation,
   AuthAdapter,
   EventsRepository,
+  AggregateRepository,
 } from '../utils/types';
-
-export type AggregateRepository<S> = {
-  /**
-   * get the state of the aggregate with the given id
-   *
-   * @param id the id of the aggregate
-   * @returns promise of the state of the aggregate
-   */
-  getOne: (id: string) => Promise<S>;
-  /**
-   * get states of all aggregates
-   *
-   * @returns promise of states of all aggregates keyed by id
-   */
-  getAll: () => Promise<{ [id: string]: S }>;
-  /**
-   * insert a new aggregate with the given state and id
-   *
-   * @param id the id of the aggregate
-   * @param state the state of the aggregate
-   */
-  insert: (id: string, state: S) => Promise<void>;
-  /**
-   * update the state of the aggregate with the given id
-   *
-   * @param id the id of the aggregate
-   * @param state the state of the aggregate
-   */
-  update: (id: string, state: S) => Promise<void>;
-  /**
-   * delete the state of the aggregate with the given id
-   *
-   * @param id the id of the aggregate
-   */
-  delete: (id: string) => Promise<void>;
-  /**
-   * delete all aggregates in the repository
-   */
-  deleteAll: () => Promise<void>;
-};
 
 export type AggregateStore<
   U extends AccountInterface,
