@@ -133,17 +133,14 @@ export const createStore = <
     eventBus: EventBus;
   }
 ): AggregateStore<U, A, S, C> => {
+  // setup aggregate state as a BehaviorSubject
   const collection$ = new BehaviorSubject<{ [id: string]: S }>({});
 
+  // define the zod schema for the aggregate state
   const stateSchema = z.intersection(
     baseStateSchema,
     agg.aggregateSchema ?? z.any()
   ) as ZodSchema<S>;
-
-  const commandByEventType = Object.values(agg.commands ?? {}).reduce(
-    (acc, cmd) => ({ ...acc, [`${agg.aggregateType}_${cmd.eventType}`]: cmd }),
-    {} as { [eventType: string]: AggregateCommandConfig<U, A, Operation, string, S, any> }
-  );
 
   // load the aggregate states from the repository
   let initialized = false;
@@ -155,9 +152,17 @@ export const createStore = <
     }
   })();
 
+  // process events for this aggregate from the event bus. This needs to be separate from the
+  // command processing functions since events may come both from the application as well as from
+  // the server.
   ctx.eventBus.subscribe(async (event) => {
     await initialization;
     const currStoreState = collection$.value;
+
+    const commandByEventType = Object.values(agg.commands ?? {}).reduce(
+      (acc, cmd) => ({ ...acc, [`${agg.aggregateType}_${cmd.eventType}`]: cmd }),
+      {} as { [eventType: string]: AggregateCommandConfig<U, A, Operation, string, S, any> }
+    );
 
     // TODO: add support for transactional commits
     const persistEventAndAggregate = async (state: S) => {
@@ -226,6 +231,12 @@ export const createStore = <
     }
   });
 
+  // generate map of command functions from command config which
+  // 1. validates event payload,
+  // 2. checks authorization, and
+  // 3. adds metadata
+  // and than dispatches the event to the event bus. The processing of events is handled by the
+  // subscription to the event bus above.
   const fns = mapObject(agg.commands ?? ({} as C), (cmd) => {
     const dispatch = async (aggregateId: string, payload: any, lastEventId?: string) => {
       // generate event
