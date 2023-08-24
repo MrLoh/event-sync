@@ -11,7 +11,7 @@ import type {
   Operation,
   AuthAdapter,
   EventsRepository,
-  AggregateRepository,
+  AggregateConfig,
 } from '../utils/types';
 
 type AggregateCommandFunctions<
@@ -102,13 +102,7 @@ export const createStore = <
     [fn: string]: AggregateCommandConfig<U, A, Operation, string, S, any>;
   }
 >(
-  agg: {
-    aggregateType: A;
-    aggregateSchema?: ZodSchema<Omit<S, keyof BaseState>>;
-    aggregateRepository?: AggregateRepository<S>;
-    aggregateCommands: C;
-    createId?: () => string;
-  },
+  agg: AggregateConfig<U, A, S, C>,
   ctx: {
     authAdapter: AuthAdapter<U>;
     createId: () => string;

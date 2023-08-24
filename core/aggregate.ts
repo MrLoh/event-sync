@@ -8,23 +8,9 @@ import type {
   Operation,
   AggregateEvent,
   Policy,
+  AggregateConfig,
 } from '../utils/types';
 import { mapObject } from '../utils/mapObject';
-
-type AggregateConfig<
-  U extends AccountInterface,
-  A extends string,
-  S extends BaseState,
-  C extends {
-    [fn: string]: AggregateCommandConfig<U, A, Operation, string, S, any>;
-  }
-> = {
-  aggregateType: A;
-  aggregateSchema?: ZodSchema<Omit<S, keyof BaseState>>;
-  aggregateRepository?: AggregateRepository<S>;
-  aggregateCommands: C;
-  createId?: () => string;
-};
 
 type AggregateCommandConfigBuilder<
   U extends AccountInterface,
@@ -34,26 +20,56 @@ type AggregateCommandConfigBuilder<
   S extends BaseState,
   P
 > = AggregateCommandConfig<U, A, O, T, S, P> & {
+  /**
+   * Set the payload schema for the command
+   *
+   * @param schema the payload schema
+   * @returns the command builder for chaining
+   */
   payload: <Payload>(
     schema: ZodSchema<Payload>
   ) => AggregateCommandConfigBuilder<U, A, O, T, S, Payload>;
+  /**
+   * Set the policy that determines if the account is authorized to execute the command
+   *
+   * @param policy the policy function
+   * @returns the command builder for chaining
+   */
   policy: (
     policy: (account: U | null, event: AggregateEvent<A, O, `${A}_${T}`, P>) => boolean
   ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
 } & (O extends 'create'
     ? {
+        /**
+         * Set the function that constructs the initial state of the aggregate
+         *
+         * @param construct the constructor function
+         * @returns the command builder for chaining
+         */
         constructor: (
           construct: (payload: P) => Omit<S, keyof BaseState>
         ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
       }
     : O extends 'update'
     ? {
+        /**
+         * Set the function that updates the state of the aggregate
+         *
+         * @param reduce the reducer function
+         * @returns the command builder for chaining
+         */
         reducer: (
           reduce: (payload: P, state: S) => Omit<S, keyof BaseState>
         ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
       }
     : O extends 'delete'
     ? {
+        /**
+         * Set the function to call before deleting the aggregate
+         *
+         * @param destruct the destructor function
+         * @returns the command builder for chaining
+         */
         destructor: (
           destruct: (payload: P, state: S) => void
         ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
@@ -73,7 +89,20 @@ type AggregateConfigBuilder<
   C extends { [fn: string]: AggregateCommandConfig<U, A, any, any, S, any> }
 > = {
   config: AggregateConfig<U, A, S, C>;
-  schema: <State extends Omit<S, keyof BaseState>, D extends { createDefaultCommands: boolean }>(
+  /**
+   * Set the schema for the aggregate state
+   *
+   * @param schema the schema
+   * @param options options for the schema setter
+   * @returns the aggregate builder for chaining
+   */
+  schema: <
+    State extends Omit<S, keyof BaseState>,
+    D extends {
+      /** indicates if default create, update, and delete commands should be defined based on the schema */
+      createDefaultCommands: boolean;
+    }
+  >(
     schema: ZodSchema<State>,
     options?: D
   ) => AggregateConfigBuilder<
@@ -84,7 +113,19 @@ type AggregateConfigBuilder<
       ? DefaultCommandsConfig<U, A, State & BaseState>
       : { [fn: string]: AggregateCommandConfig<U, A, any, any, BaseState & State, any> }
   >;
+  /**
+   * Set the repository for persisting the aggregate state
+   *
+   * @param repository the repository
+   * @returns the aggregate builder for chaining
+   */
   repository: (repository: AggregateRepository<S>) => AggregateConfigBuilder<U, A, S, C>;
+  /**
+   * Set the commands for the aggregate
+   *
+   * @param maker a function that takes a command builder and returns a map of commands
+   * @returns the aggregate builder for chaining
+   */
   commands: <Commands extends { [fn: string]: AggregateCommandConfig<U, A, any, any, S, any> }>(
     maker: (
       command: <O extends Operation, T extends string>(
@@ -95,11 +136,24 @@ type AggregateConfigBuilder<
   ) => AggregateConfigBuilder<U, A, S, Commands>;
 };
 
+/**
+ * Create an aggregate builder context
+ *
+ * @param ctx the context
+ * @returns the aggregate builder context
+ */
 export const createAggregateContext = <U extends AccountInterface>(ctx: {
   createId?: () => string;
   defaultPolicy?: Policy<U, string, Operation, string, unknown>;
 }) => {
   return {
+    /**
+     * Define an aggregate
+     *
+     * @param aggregateType the type of the aggregate
+     * @param options options for the aggregate
+     * @returns the aggregate builder for chaining
+     */
     aggregate<A extends string>(
       aggregateType: A,
       options?: {
@@ -107,6 +161,13 @@ export const createAggregateContext = <U extends AccountInterface>(ctx: {
         defaultPolicy?: Policy<U, A, Operation, string, unknown>;
       }
     ): AggregateConfigBuilder<U, A, BaseState, {}> {
+      /**
+       * Define a command for the aggregate
+       *
+       * @param eventType the event type
+       * @param operation the operation the command performs
+       * @returns the command builder for chaining
+       */
       const command = <O extends Operation, T extends string>(eventType: T, operation: O) => {
         // @ts-ignore -- we define action functions for each type of operation and throw an error if mismatched
         const cmdBuilder: AggregateCommandConfigBuilder<U, A, O, T, any, any> = {
@@ -149,6 +210,7 @@ export const createAggregateContext = <U extends AccountInterface>(ctx: {
         return cmdBuilder;
       };
 
+      // removes builder functions from the config and throws an error if any configurations are missing
       const parseCommandsConfig = (commandBuilders: {
         [fn: string]: AggregateCommandConfig<U, A, any, any, any, any>;
       }) => {
