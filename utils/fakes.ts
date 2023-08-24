@@ -64,3 +64,13 @@ export const createFakeAggregateRepository = <S extends BaseState>(): AggregateR
     },
   };
 };
+
+export const createAggregateObject = <S extends { id: string }>(state: S): S & BaseState => ({
+  createdBy: 'device1',
+  createdOn: 'account1',
+  lastEventId: 'event1',
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  version: 1,
+  ...state,
+}); 

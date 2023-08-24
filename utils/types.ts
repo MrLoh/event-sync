@@ -93,8 +93,8 @@ export type AggregateCommandConfig<
 > = {
   eventType: T;
   operation: O;
-  policy: Policy<U, A, O, T, P>;
-  payloadSchema: ZodSchema<P>;
+  authPolicy: Policy<U, A, O, T, P>;
+  payloadSchema?: ZodSchema<P>;
 } & (O extends 'create'
   ? {
       construct: (payload: P) => Omit<S, keyof BaseState>;
@@ -114,29 +114,6 @@ export type AggregateCommandConfig<
       destruct?: (state: S, payload: P) => void;
     }
   : never);
-
-export type AggregateCommandFunctions<
-  U extends AccountInterface,
-  A extends string,
-  S extends BaseState,
-  C extends { [fn: string]: AggregateCommandConfig<U, A, Operation, string, S, any> }
-> = {
-  [F in keyof C]: C[F] extends AggregateCommandConfig<U, A, infer O, string, S, infer P>
-    ? O extends 'create'
-      ? P extends undefined
-        ? () => Promise<S>
-        : (payload: P) => Promise<string>
-      : O extends 'update'
-      ? P extends undefined
-        ? (id: string) => Promise<void>
-        : (id: string, payload: P) => Promise<void>
-      : O extends 'delete'
-      ? P extends undefined
-        ? (id: string) => Promise<void>
-        : (id: string, payload: P) => Promise<void>
-      : never
-    : 'never';
-};
 
 export type EventsRepository = {
   insert: (event: AnyAggregateEvent) => Promise<void>;

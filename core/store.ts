@@ -8,12 +8,34 @@ import type {
   AccountInterface,
   BaseState,
   AggregateCommandConfig,
-  AggregateCommandFunctions,
   Operation,
   AuthAdapter,
   EventsRepository,
   AggregateRepository,
 } from '../utils/types';
+
+type AggregateCommandFunctions<
+  U extends AccountInterface,
+  A extends string,
+  S extends BaseState,
+  C extends { [fn: string]: AggregateCommandConfig<U, A, Operation, string, S, any> }
+> = {
+  [F in keyof C]: C[F] extends AggregateCommandConfig<U, A, infer O, string, S, infer P>
+    ? O extends 'create'
+      ? P extends undefined
+        ? () => Promise<S>
+        : (payload: P) => Promise<string>
+      : O extends 'update'
+      ? P extends undefined
+        ? (id: string) => Promise<void>
+        : (id: string, payload: P) => Promise<void>
+      : O extends 'delete'
+      ? P extends undefined
+        ? (id: string) => Promise<void>
+        : (id: string, payload: P) => Promise<void>
+      : never
+    : 'never';
+};
 
 export type AggregateStore<
   U extends AccountInterface,
@@ -83,8 +105,8 @@ export const createStore = <
   agg: {
     aggregateType: A;
     aggregateSchema?: ZodSchema<Omit<S, keyof BaseState>>;
-    repository?: AggregateRepository<S>;
-    commands?: C;
+    aggregateRepository?: AggregateRepository<S>;
+    aggregateCommands: C;
     createId?: () => string;
   },
   ctx: {
@@ -106,8 +128,8 @@ export const createStore = <
   // load the aggregate states from the repository
   let initialized = false;
   const initialization = (async () => {
-    if (agg.repository) {
-      const repositoryState = await agg.repository.getAll();
+    if (agg.aggregateRepository) {
+      const repositoryState = await agg.aggregateRepository.getAll();
       if (Object.keys(repositoryState).length) collection$.next(repositoryState);
       initialized = true;
     }
@@ -120,7 +142,7 @@ export const createStore = <
     await initialization;
     const currStoreState = collection$.value;
 
-    const commandByEventType = Object.values(agg.commands ?? {}).reduce(
+    const commandByEventType = Object.values(agg.aggregateCommands).reduce(
       (acc, cmd) => ({ ...acc, [`${agg.aggregateType}_${cmd.eventType}`]: cmd }),
       {} as { [eventType: string]: AggregateCommandConfig<U, A, Operation, string, S, any> }
     );
@@ -129,13 +151,13 @@ export const createStore = <
     const persistEventAndAggregate = async (state: S) => {
       try {
         if (ctx.eventsRepository) await ctx.eventsRepository.insert(event);
-        if (agg.repository) {
+        if (agg.aggregateRepository) {
           if (event.operation === 'create') {
-            await agg.repository.insert(event.aggregateId, state);
+            await agg.aggregateRepository.insert(event.aggregateId, state);
           } else if (event.operation === 'update') {
-            return await agg.repository.update(event.aggregateId, state);
+            return await agg.aggregateRepository.update(event.aggregateId, state);
           } else if (event.operation === 'delete') {
-            return await agg.repository.delete(event.aggregateId);
+            return await agg.aggregateRepository.delete(event.aggregateId);
           }
         }
       } catch (e) {
@@ -198,7 +220,7 @@ export const createStore = <
   // 3. adds metadata
   // and than dispatches the event to the event bus. The processing of events is handled by the
   // subscription to the event bus above.
-  const fns = mapObject(agg.commands ?? ({} as C), (cmd) => {
+  const fns = mapObject(agg.aggregateCommands, (cmd) => {
     const dispatch = async (aggregateId: string, payload: any, lastEventId?: string) => {
       // generate event
       const type = `${agg.aggregateType}_${cmd.eventType}` as const;
@@ -227,7 +249,7 @@ export const createStore = <
         prevId: lastEventId,
       };
       // check authorization
-      if (!cmd.policy(account, event)) {
+      if (!cmd.authPolicy(account, event)) {
         throw new UnauthorizedError(
           `Account ${account?.id} is not authorized to dispatch event ${event.type}`
         );
@@ -260,7 +282,7 @@ export const createStore = <
 
   // ensure commands don't overwrite default store methods
   const restrictedProps = ['get', 'subscribe', 'reset', 'initialize', 'initialized'];
-  if (restrictedProps.some((prop) => agg.commands?.hasOwnProperty(prop))) {
+  if (restrictedProps.some((prop) => agg.aggregateCommands?.hasOwnProperty(prop))) {
     // istanbul ignore next
     throw new Error(`commands cannot have the following names: ${restrictedProps.join(', ')}`);
   }
@@ -274,7 +296,7 @@ export const createStore = <
     },
     reset: async () => {
       await initialization;
-      if (agg.repository) await agg.repository.deleteAll();
+      if (agg.aggregateRepository) await agg.aggregateRepository.deleteAll();
       collection$.next({});
     },
     initialize: () => {

@@ -7,7 +7,7 @@
  */
 export const mapObject = <
   O extends { [key: string]: any },
-  F extends (value: O[keyof O], key?: keyof O) => any
+  F extends (value: O[keyof O], key: keyof O) => any
 >(
   obj: O,
   fn: F

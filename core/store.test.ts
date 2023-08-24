@@ -7,11 +7,12 @@ import {
   createId,
   createFakeAggregateRepository,
   createFakeEventsRepository,
+  createAggregateObject,
 } from '../utils/fakes';
 import type { AnyAggregateEvent, BaseState, AggregateRepository } from '../utils/types';
 import type { Account } from '../utils/fakes';
 
-describe('store', () => {
+describe('create store', () => {
   const profileSchema = z.object({ name: z.string().min(2) });
   type Profile = z.infer<typeof profileSchema>;
 
@@ -27,30 +28,30 @@ describe('store', () => {
       {
         aggregateType: 'PROFILE',
         aggregateSchema: profileSchema,
-        commands: {
+        aggregateCommands: {
           create: {
             eventType: 'CREATED',
             operation: 'create' as const,
             payloadSchema: profileSchema,
-            policy: (account: Account | null) => account?.roles.includes('creator') ?? false,
+            authPolicy: (account: Account | null) => account?.roles.includes('creator') ?? false,
             construct: ({ name }: Profile) => ({ name }),
           },
           update: {
             eventType: 'UPDATED',
             operation: 'update' as const,
             payloadSchema: profileSchema.partial(),
-            policy: (account: Account | null) => account?.roles.includes('updater') ?? false,
+            authPolicy: (account: Account | null) => account?.roles.includes('updater') ?? false,
             reduce: (state: Profile, payload: Partial<Profile>) => ({ ...state, ...payload }),
           },
           delete: {
             eventType: 'DELETED',
             operation: 'delete' as const,
             payloadSchema: z.undefined(),
-            policy: (account: Account | null) => account?.roles.includes('updater') ?? false,
+            authPolicy: (account: Account | null) => account?.roles.includes('updater') ?? false,
             destruct: () => {},
           },
         },
-        repository: aggregateRepository,
+        aggregateRepository: aggregateRepository,
       },
       context
     );
@@ -237,23 +238,12 @@ describe('store', () => {
   it('starts up with state persisted to repository', async () => {
     // Given a repository with an existing profile
     const aggregateRepository = createFakeAggregateRepository<Profile & BaseState>();
-    await aggregateRepository.insert('profile1', {
-      id: 'profile1',
-      name: 'tester',
-      createdBy: 'device1',
-      createdOn: 'account1',
-      lastEventId: 'event1',
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      version: 1,
-    });
+    await aggregateRepository.insert('p1', createAggregateObject({ id: 'p1', name: 'tester' }));
     // When a new store is created with the repository and initialized
     const { store } = setup(aggregateRepository);
     await store.initialize();
     // Then the state is loaded from the repository
-    expect(store.state['profile1']).toEqual(
-      expect.objectContaining({ id: 'profile1', name: 'tester' })
-    );
+    expect(store.state['p1']).toEqual(expect.objectContaining({ id: 'p1', name: 'tester' }));
   });
 
   it('can check initialization status', async () => {
