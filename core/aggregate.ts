@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { mapObject } from '../utils/mapObject';
+
 import type { ZodSchema } from 'zod';
 import type {
   AggregateRepository,
@@ -10,7 +12,6 @@ import type {
   Policy,
   AggregateConfig,
 } from '../utils/types';
-import { mapObject } from '../utils/mapObject';
 
 type AggregateCommandConfigBuilder<
   U extends AccountInterface,
@@ -19,7 +20,9 @@ type AggregateCommandConfigBuilder<
   T extends string,
   S extends BaseState,
   P
-> = AggregateCommandConfig<U, A, O, T, S, P> & {
+> = {
+  /** The command config that is being constructed */
+  config: AggregateCommandConfig<U, A, O, T, S, P>;
   /**
    * Set the payload schema for the command
    *
@@ -39,42 +42,42 @@ type AggregateCommandConfigBuilder<
     policy: (account: U | null, event: AggregateEvent<A, O, `${A}_${T}`, P>) => boolean
   ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
 } & (O extends 'create'
-    ? {
-        /**
-         * Set the function that constructs the initial state of the aggregate
-         *
-         * @param construct the constructor function
-         * @returns the command builder for chaining
-         */
-        constructor: (
-          construct: (payload: P) => Omit<S, keyof BaseState>
-        ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
-      }
-    : O extends 'update'
-    ? {
-        /**
-         * Set the function that updates the state of the aggregate
-         *
-         * @param reduce the reducer function
-         * @returns the command builder for chaining
-         */
-        reducer: (
-          reduce: (payload: P, state: S) => Omit<S, keyof BaseState>
-        ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
-      }
-    : O extends 'delete'
-    ? {
-        /**
-         * Set the function to call before deleting the aggregate
-         *
-         * @param destruct the destructor function
-         * @returns the command builder for chaining
-         */
-        destructor: (
-          destruct: (payload: P, state: S) => void
-        ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
-      }
-    : never);
+  ? {
+      /**
+       * Set the function that constructs the initial state of the aggregate
+       *
+       * @param construct the constructor function
+       * @returns the command builder for chaining
+       */
+      constructor: (
+        construct: (payload: P) => Omit<S, keyof BaseState>
+      ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
+    }
+  : O extends 'update'
+  ? {
+      /**
+       * Set the function that updates the state of the aggregate
+       *
+       * @param reduce the reducer function
+       * @returns the command builder for chaining
+       */
+      reducer: (
+        reduce: (payload: P, state: S) => Omit<S, keyof BaseState>
+      ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
+    }
+  : O extends 'delete'
+  ? {
+      /**
+       * Set the function to call before deleting the aggregate
+       *
+       * @param destruct the destructor function
+       * @returns the command builder for chaining
+       */
+      destructor: (
+        destruct: (payload: P, state: S) => void
+      ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
+    }
+  : never);
 
 type DefaultCommandsConfig<U extends AccountInterface, A extends string, S extends BaseState> = {
   create: AggregateCommandConfig<U, A, 'create', 'CREATED', S, Omit<S, keyof BaseState>>;
@@ -82,12 +85,13 @@ type DefaultCommandsConfig<U extends AccountInterface, A extends string, S exten
   delete: AggregateCommandConfig<U, A, 'delete', 'DELETED', S, undefined>;
 };
 
-type AggregateConfigBuilder<
+export type AggregateConfigBuilder<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
   C extends { [fn: string]: AggregateCommandConfig<U, A, any, any, S, any> }
 > = {
+  /** The aggregate config that is being constructed */
   config: AggregateConfig<U, A, S, C>;
   /**
    * Set the schema for the aggregate state
@@ -126,14 +130,16 @@ type AggregateConfigBuilder<
    * @param maker a function that takes a command builder and returns a map of commands
    * @returns the aggregate builder for chaining
    */
-  commands: <Commands extends { [fn: string]: AggregateCommandConfig<U, A, any, any, S, any> }>(
+  commands: <
+    Commands extends { [fn: string]: { config: AggregateCommandConfig<U, A, any, any, S, any> } }
+  >(
     maker: (
       command: <O extends Operation, T extends string>(
         eventType: T,
         operation: O
       ) => AggregateCommandConfigBuilder<U, A, O, T, S, unknown>
     ) => Commands
-  ) => AggregateConfigBuilder<U, A, S, Commands>;
+  ) => AggregateConfigBuilder<U, A, S, { [K in keyof Commands]: Commands[K]['config'] }>;
 };
 
 /**
@@ -171,75 +177,63 @@ export const createAggregateContext = <U extends AccountInterface>(ctx: {
       const command = <O extends Operation, T extends string>(eventType: T, operation: O) => {
         // @ts-ignore -- we define action functions for each type of operation and throw an error if mismatched
         const cmdBuilder: AggregateCommandConfigBuilder<U, A, O, T, any, any> = {
-          eventType,
-          operation,
-          authPolicy: options?.defaultPolicy ?? ctx.defaultPolicy,
+          config: {
+            eventType,
+            operation,
+            authPolicy: options?.defaultPolicy ?? ctx.defaultPolicy,
+          },
           payload: <Payload>(schema: ZodSchema<Payload>) => {
-            cmdBuilder.payloadSchema = schema;
+            cmdBuilder.config.payloadSchema = schema;
             return cmdBuilder;
           },
           policy: (policy) => {
-            cmdBuilder.authPolicy = policy;
+            cmdBuilder.config.authPolicy = policy;
             return cmdBuilder;
           },
           constructor: (constructor) => {
             // istanbul ignore next
-            if (cmdBuilder.operation !== 'create') {
+            if (cmdBuilder.config.operation !== 'create') {
               throw new Error('Constructor is only valid for create operations');
             }
-            cmdBuilder.construct = constructor;
+            cmdBuilder.config.construct = constructor;
             return cmdBuilder;
           },
           reducer: (reducer) => {
             // istanbul ignore next
-            if (cmdBuilder.operation !== 'update') {
+            if (cmdBuilder.config.operation !== 'update') {
               throw new Error('Reducer is only valid for update operations');
             }
-            cmdBuilder.reduce = reducer;
+            cmdBuilder.config.reduce = reducer;
             return cmdBuilder;
           },
           destructor: (destructor) => {
             // istanbul ignore next
-            if (cmdBuilder.operation !== 'delete') {
+            if (cmdBuilder.config.operation !== 'delete') {
               throw new Error('Destructor is only valid for delete operations');
             }
-            cmdBuilder.destruct = destructor;
+            cmdBuilder.config.destruct = destructor;
             return cmdBuilder;
           },
         };
         return cmdBuilder;
       };
 
-      // removes builder functions from the config and throws an error if any configurations are missing
+      // extract config from builder functions and throws an error if any configuration is missing
       const parseCommandsConfig = (commandBuilders: {
-        [fn: string]: AggregateCommandConfig<U, A, any, any, any, any>;
+        [fn: string]: { config: AggregateCommandConfig<U, A, any, any, any, any> };
       }) => {
-        return mapObject(
-          commandBuilders,
-          (
-            { eventType, operation, authPolicy, payloadSchema, construct, reduce, destruct },
-            key
-          ) => {
-            if (!authPolicy) {
-              throw new Error(`missing policy definition for ${String(key)} command`);
-            }
-            if (!construct && operation === 'create') {
-              throw new Error(`missing constructor definition for ${String(key)} command`);
-            }
-            if (!reduce && operation === 'update') {
-              throw new Error(`missing reducer definition for ${String(key)} command`);
-            }
-            return {
-              eventType,
-              operation,
-              authPolicy,
-              payloadSchema,
-              construct,
-              reduce,
-              destruct,
-            };
+        return mapObject(commandBuilders, ({ config }, key) => {
+          if (!config.authPolicy) {
+            throw new Error(`missing policy definition for ${String(key)} command`);
           }
-        );
+          if (!config.construct && config.operation === 'create') {
+            throw new Error(`missing constructor definition for ${String(key)} command`);
+          }
+          if (!config.reduce && config.operation === 'update') {
+            throw new Error(`missing reducer definition for ${String(key)} command`);
+          }
+          return config;
+        });
       };
 
       const aggBuilder: AggregateConfigBuilder<U, A, any, any> = {
