@@ -12,6 +12,7 @@ import type {
   Policy,
   AggregateConfig,
 } from '../utils/types';
+import type { AggregateStore } from './store';
 
 type AggregateCommandConfigBuilder<
   U extends AccountInterface,
@@ -89,7 +90,8 @@ export type AggregateConfigBuilder<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  C extends { [fn: string]: AggregateCommandConfig<U, A, any, any, S, any> }
+  C extends { [fn: string]: AggregateCommandConfig<U, A, any, any, S, any> },
+  registerable = false
 > = {
   /** The aggregate config that is being constructed */
   config: AggregateConfig<U, A, S, C>;
@@ -102,20 +104,21 @@ export type AggregateConfigBuilder<
    */
   schema: <
     State extends Omit<S, keyof BaseState>,
-    D extends {
+    SchemaOptions extends {
       /** indicates if default create, update, and delete commands should be defined based on the schema */
       createDefaultCommands: boolean;
     }
   >(
     schema: ZodSchema<State>,
-    options?: D
+    options?: SchemaOptions
   ) => AggregateConfigBuilder<
     U,
     A,
     State & BaseState,
-    D['createDefaultCommands'] extends true
+    SchemaOptions['createDefaultCommands'] extends true
       ? DefaultCommandsConfig<U, A, State & BaseState>
-      : { [fn: string]: AggregateCommandConfig<U, A, any, any, BaseState & State, any> }
+      : { [fn: string]: AggregateCommandConfig<U, A, any, any, BaseState & State, any> },
+    registerable
   >;
   /**
    * Set the repository for persisting the aggregate state
@@ -123,7 +126,9 @@ export type AggregateConfigBuilder<
    * @param repository the repository
    * @returns the aggregate builder for chaining
    */
-  repository: (repository: AggregateRepository<S>) => AggregateConfigBuilder<U, A, S, C>;
+  repository: (
+    repository: AggregateRepository<S>
+  ) => AggregateConfigBuilder<U, A, S, C, registerable>;
   /**
    * Set the commands for the aggregate
    *
@@ -131,7 +136,9 @@ export type AggregateConfigBuilder<
    * @returns the aggregate builder for chaining
    */
   commands: <
-    Commands extends { [fn: string]: { config: AggregateCommandConfig<U, A, any, any, S, any> } }
+    Commands extends {
+      [fn: string]: { config: AggregateCommandConfig<U, A, any, any, S, any> };
+    }
   >(
     maker: (
       command: <O extends Operation, T extends string>(
@@ -139,8 +146,23 @@ export type AggregateConfigBuilder<
         operation: O
       ) => AggregateCommandConfigBuilder<U, A, O, T, S, unknown>
     ) => Commands
-  ) => AggregateConfigBuilder<U, A, S, { [K in keyof Commands]: Commands[K]['config'] }>;
-};
+  ) => AggregateConfigBuilder<
+    U,
+    A,
+    S,
+    { [K in keyof Commands]: Commands[K]['config'] },
+    registerable
+  >;
+} & (registerable extends true
+  ? {
+      /**
+       * Registers the aggregate config to the broker to create a store
+       *
+       * @returns the aggregate store
+       */
+      register: () => AggregateStore<U, A, S, C>;
+    }
+  : {});
 
 /**
  * Create an aggregate builder context
@@ -160,13 +182,19 @@ export const createAggregateContext = <U extends AccountInterface>(ctx: {
      * @param options options for the aggregate
      * @returns the aggregate builder for chaining
      */
-    aggregate<A extends string>(
+    aggregate: <
+      A extends string,
+      R extends
+        | ((config: AggregateConfig<U, A, any, any>) => AggregateStore<U, A, any, any>)
+        | undefined
+    >(
       aggregateType: A,
       options?: {
         createId?: () => string;
         defaultPolicy?: Policy<U, A, Operation, string, unknown>;
+        register?: R;
       }
-    ): AggregateConfigBuilder<U, A, BaseState, {}> {
+    ): AggregateConfigBuilder<U, A, BaseState, {}, R extends undefined ? false : true> => {
       /**
        * Define a command for the aggregate
        *
@@ -275,7 +303,33 @@ export const createAggregateContext = <U extends AccountInterface>(ctx: {
           return aggBuilder;
         },
       };
-      return aggBuilder as AggregateConfigBuilder<U, A, BaseState, {}>;
+      if (options?.register) {
+        const { register } = options;
+        // @ts-ignore -- we cast aggBuilder later to the correct type
+        aggBuilder.register = () => {
+          return register(aggBuilder.config);
+        };
+      }
+      return aggBuilder as AggregateConfigBuilder<
+        U,
+        A,
+        BaseState,
+        {},
+        R extends undefined ? false : true
+      >;
     },
   };
 };
+
+/** Extract the union of event types from an aggregate config */
+export type AggregateEventTypeFromConfig<
+  C extends {
+    aggregateCommands: {
+      [fn: string]: AggregateCommandConfig<any, any, any, any, any, any>;
+    };
+  }
+> = {
+  [F in keyof C]: C[F] extends AggregateCommandConfig<any, infer A, infer O, infer T, any, infer P>
+    ? AggregateEvent<A, O, `${A}_${T}`, P>
+    : never;
+}[keyof C];

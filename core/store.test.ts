@@ -64,7 +64,7 @@ describe('create store', () => {
     // When a command is called
     const id = await store.create({ name: 'test' });
     // Then the state is updated
-    expect(store.state[id]).toEqual(expect.objectContaining({ id, name: 'test' }));
+    expect(store.state[id]).toMatchObject({ id, name: 'test' });
   });
 
   it('allows subscribing to store state', async () => {
@@ -122,16 +122,14 @@ describe('create store', () => {
       })
     );
     // And the state has appropriate metadata
-    expect(store.state[id]).toEqual(
-      expect.objectContaining({
-        createdBy: 'device1',
-        createdOn: 'account1',
-        lastEventId: events[0].id,
-        createdAt: events[0].dispatchedAt,
-        updatedAt: events[0].dispatchedAt,
-        version: 1,
-      })
-    );
+    expect(store.state[id]).toMatchObject({
+      createdBy: 'device1',
+      createdOn: 'account1',
+      lastEventId: events[0].id,
+      createdAt: events[0].dispatchedAt,
+      updatedAt: events[0].dispatchedAt,
+      version: 1,
+    });
   });
 
   it('command validates payload', async () => {
@@ -146,9 +144,10 @@ describe('create store', () => {
     } catch (e) {
       // Then an InvalidInputError is thrown
       expect(e).toBeInstanceOf(InvalidInputError);
-      expect((e as InvalidInputError<ZodError>).cause?.issues[0]).toEqual(
-        expect.objectContaining({ code: 'too_small', path: ['name'] })
-      );
+      expect((e as InvalidInputError<ZodError>).cause?.issues[0]).toMatchObject({
+        code: 'too_small',
+        path: ['name'],
+      });
     } finally {
       // And no event is dispatched
       expect(subscriber).not.toHaveBeenCalled();
@@ -187,9 +186,7 @@ describe('create store', () => {
     // When a command is called
     const id = await store.create({ name: 'test' });
     // Then the state is persisted in the repository
-    expect(await aggregateRepository.getOne(id)).toEqual(
-      expect.objectContaining({ id, name: 'test' })
-    );
+    expect(await aggregateRepository.getOne(id)).toMatchObject({ id, name: 'test' });
   });
 
   it('command persists event in repository', async () => {
@@ -215,11 +212,9 @@ describe('create store', () => {
     // When an update command is called
     await store.update(id, { name: 'renamed tester' });
     // Then the state is updated
-    expect(store.state[id]).toEqual(expect.objectContaining({ id, name: 'renamed tester' }));
+    expect(store.state[id]).toMatchObject({ id, name: 'renamed tester' });
     // And the state is persisted in the repository
-    expect(await aggregateRepository.getOne(id)).toEqual(
-      expect.objectContaining({ id, name: 'renamed tester' })
-    );
+    expect(await aggregateRepository.getOne(id)).toMatchObject({ id, name: 'renamed tester' });
   });
 
   it('command can delete state', async () => {
@@ -243,7 +238,7 @@ describe('create store', () => {
     const { store } = setup(aggregateRepository);
     await store.initialize();
     // Then the state is loaded from the repository
-    expect(store.state['p1']).toEqual(expect.objectContaining({ id: 'p1', name: 'tester' }));
+    expect(store.state['p1']).toMatchObject({ id: 'p1', name: 'tester' });
   });
 
   it('can check initialization status', async () => {
@@ -297,9 +292,7 @@ describe('create store', () => {
     // And the state is rolled back
     expect(Object.keys(store.state)).toHaveLength(1);
     expect(store.state[newProfileId]).toBeUndefined();
-    expect(store.state[oldProfileId]).toEqual(
-      expect.objectContaining({ id: oldProfileId, name: 'tester' })
-    );
+    expect(store.state[oldProfileId]).toMatchObject({ id: oldProfileId, name: 'tester' });
     expect(subscriber).toHaveBeenCalledWith(
       expect.objectContaining({ [oldProfileId]: expect.any(Object) })
     );

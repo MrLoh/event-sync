@@ -37,9 +37,9 @@ export type EventsRepository = {
    */
   insert: (event: AnyAggregateEvent) => Promise<void>;
   /**
-   * Reset the repository deleting all events
+   * Delete all events from the repository
    */
-  reset: () => Promise<void>;
+  deleteAll: () => Promise<void>;
   /**
    * Mark an event as recorded by the server
    *
@@ -216,4 +216,46 @@ export type AggregateConfig<
 
   aggregateCommands: C;
   createId?: () => string;
+};
+
+export type EventServerAdapter = {
+  /**
+   * Send an event to the server to be recorded
+   *
+   * @param event the event to record
+   * @returns promise of the event id and date-time it was recorded at
+   */
+  record: (
+    event: AnyAggregateEvent
+  ) => Promise<{ eventId: string; recordedAt: Date; recordedBy: string }>;
+  /**
+   * Fetch new events since lastRecordedEventId from the server
+   *
+   * @param lastRecordedEventId
+   * @returns promise with array of the new events
+   */
+  fetch: (lastRecordedEventId: string | null) => Promise<AnyAggregateEvent[]>;
+  /**
+   * Subscribe to new events from the server
+   *
+   * @param subscriber function to call when a new event is received
+   * @returns function to unsubscribe from new events
+   */
+  subscribe?: (subscriber: (event: AnyAggregateEvent) => void) => () => void;
+};
+
+export type ConnectionStatusAdapter = {
+  /**
+   * Subscribe to connection status changes
+   *
+   * @param subscriber function to call when the connection status changes
+   * @returns function to unsubscribe from connection status changes
+   */
+  subscribe: (subscriber: (connected: boolean | null) => void) => void;
+  /**
+   * Get the current connection status
+   *
+   * @returns promise of the current connection status
+   */
+  get: () => Promise<boolean | null>;
 };

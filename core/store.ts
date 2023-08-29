@@ -1,4 +1,4 @@
-import { z, ZodSchema } from 'zod';
+import { z, type ZodSchema } from 'zod';
 import { BehaviorSubject } from 'rxjs';
 import { mapObject } from '../utils/mapObject';
 import { InvalidInputError, UnauthorizedError } from '../utils/errors';
@@ -20,7 +20,7 @@ type AggregateCommandFunctions<
   S extends BaseState,
   C extends { [fn: string]: AggregateCommandConfig<U, A, Operation, string, S, any> }
 > = {
-  [F in keyof C]: C[F] extends AggregateCommandConfig<U, A, infer O, string, S, infer P>
+  [F in keyof C]: C[F] extends AggregateCommandConfig<U, A, infer O, any, S, infer P>
     ? O extends 'create'
       ? P extends undefined
         ? () => Promise<S>
@@ -34,7 +34,7 @@ type AggregateCommandFunctions<
         ? (id: string) => Promise<void>
         : (id: string, payload: P) => Promise<void>
       : never
-    : 'never';
+    : never;
 };
 
 export type AggregateStore<
@@ -55,7 +55,7 @@ export type AggregateStore<
    */
   subscribe: (fn: (state: { [id: string]: S }) => void) => () => void;
   /**
-   * reset the state of the aggregates to the initial state
+   * Reset state of the aggregates to the initial state and delete all entries from the aggregate
    */
   reset: () => Promise<void>;
   /**

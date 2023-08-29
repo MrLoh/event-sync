@@ -1,25 +1,15 @@
 import { createEventBus } from './event-bus';
 import type { AnyAggregateEvent } from '../utils/types';
+import { createEvent } from '../utils/fakes';
 
 describe('event bus', () => {
-  let eventSequence = 0;
-  const createEvent = (): AnyAggregateEvent => ({
-    id: 'event' + eventSequence++,
-    operation: 'create',
-    aggregateType: 'test',
-    aggregateId: 'aggregate1',
-    type: 'TESTED',
-    payload: { value: 1 },
-    dispatchedAt: new Date(),
-  });
-
   it('relays dispatched events to subscriber', () => {
     // Given an event bus with a subscriber
     const eventBus = createEventBus();
     const subscriber = jest.fn();
     eventBus.subscribe(subscriber);
     // When an event is dispatched
-    const testEvent = createEvent();
+    const testEvent = createEvent('TEST', 'TEST');
     eventBus.dispatch(testEvent);
     // Then the subscriber is called with it
     expect(subscriber).toHaveBeenCalledTimes(1);
@@ -34,7 +24,7 @@ describe('event bus', () => {
     const subscriber2 = jest.fn();
     eventBus.subscribe(subscriber2);
     // When an event is dispatched
-    const testEvent = createEvent();
+    const testEvent = createEvent('TEST', 'TEST');
     eventBus.dispatch(testEvent);
     // Then both subscribers are called with it
     expect(subscriber1).toHaveBeenCalledTimes(1);
@@ -46,7 +36,7 @@ describe('event bus', () => {
   it('replays past events to new subscribers', () => {
     // Given an event bus to which a few events have been dispatched already
     const eventBus = createEventBus();
-    const testEvents = [createEvent(), createEvent()];
+    const testEvents = [createEvent('TEST', 'TEST'), createEvent('TEST', 'TEST')];
     eventBus.dispatch(testEvents[0]);
     eventBus.dispatch(testEvents[1]);
     // When a subscriber is added
@@ -58,11 +48,24 @@ describe('event bus', () => {
     expect(subscriber).toHaveBeenCalledWith(testEvents[1]);
   });
 
+  it('allows subscribers to unsubscribe', () => {
+    // Given an event bus with a subscriber
+    const eventBus = createEventBus();
+    const subscriber = jest.fn();
+    const unsubscribe = eventBus.subscribe(subscriber);
+    // When the subscriber unsubscribes
+    unsubscribe();
+    // Then the subscriber is not called anymore
+    const testEvent = createEvent('TEST', 'TEST');
+    eventBus.dispatch(testEvent);
+    expect(subscriber).not.toHaveBeenCalled();
+  });
+
   it('can reset replay behavior', () => {
     // Given an event bus to which a few events have been dispatched already
     const eventBus = createEventBus();
-    eventBus.dispatch(createEvent());
-    eventBus.dispatch(createEvent());
+    eventBus.dispatch(createEvent('TEST', 'TEST'));
+    eventBus.dispatch(createEvent('TEST', 'TEST'));
     // And the event bus has been reset
     eventBus.reset();
     // Then past events are not replayed
@@ -70,7 +73,7 @@ describe('event bus', () => {
     eventBus.subscribe(subscriber);
     expect(subscriber).not.toHaveBeenCalled();
     // But future events will be pushed to new and old subscribers
-    const testEvent = createEvent();
+    const testEvent = createEvent('TEST', 'TEST');
     eventBus.dispatch(testEvent);
     expect(subscriber).toHaveBeenCalledTimes(1);
     expect(subscriber).toHaveBeenCalledWith(testEvent);
@@ -84,7 +87,7 @@ describe('event bus', () => {
     // When the event bus is terminated
     eventBus.terminate();
     // Then the subscriber is not called anymore
-    const testEvent = createEvent();
+    const testEvent = createEvent('TEST', 'TEST');
     expect(() => eventBus.dispatch(testEvent)).toThrowError();
     expect(subscriber).not.toHaveBeenCalled();
     // And the event bus is marked as terminated
@@ -105,7 +108,7 @@ describe('event bus', () => {
     expect(errorHandler).toHaveBeenCalledTimes(1);
     expect(errorHandler).toHaveBeenCalledWith(testError);
     // And the event bus is terminated
-    const testEvent = createEvent();
+    const testEvent = createEvent('TEST', 'TEST');
     expect(() => eventBus.dispatch(testEvent)).toThrowError();
     expect(subscriber).not.toHaveBeenCalled();
   });
@@ -122,10 +125,9 @@ describe('event bus', () => {
     // Then the event bus is not terminated anymore
     expect(eventBus.terminated).toBe(false);
     // And the subscriber can receive new events
-    const testEvent = createEvent();
+    const testEvent = createEvent('TEST', 'TEST');
     eventBus.dispatch(testEvent);
     expect(subscriber).toHaveBeenCalledTimes(1);
     expect(subscriber).toHaveBeenCalledWith(testEvent);
   });
-
 });

@@ -39,9 +39,7 @@ describe('create aggregate config', () => {
     // Then the config should have the correct repository
     expect(config.aggregateRepository).toBe(profilesRepository);
     config.aggregateRepository?.insert('p1', createAggregateObject({ id: 'p1', name: 'tester' }));
-    expect(await profilesRepository.getOne('p1')).toEqual(
-      expect.objectContaining({ name: 'tester', version: 1 })
-    );
+    expect(await profilesRepository.getOne('p1')).toMatchObject({ name: 'tester', version: 1 });
   });
 
   it('should generate aggregate config with commands', () => {
@@ -58,14 +56,12 @@ describe('create aggregate config', () => {
       }));
     // Then the config should have the correct commands
     expect(Object.keys(config.aggregateCommands ?? {})).toEqual(['create']);
-    expect(config.aggregateCommands.create).toEqual(
-      expect.objectContaining({
-        eventType: 'CREATED',
-        operation: 'create',
-        payloadSchema: profileSchema,
-        construct: constructor,
-      })
-    );
+    expect(config.aggregateCommands.create).toMatchObject({
+      eventType: 'CREATED',
+      operation: 'create',
+      payloadSchema: profileSchema,
+      construct: constructor,
+    });
   });
 
   it('should throw error if command action is not defined', () => {
@@ -192,28 +188,28 @@ describe('create aggregate config', () => {
       .schema(profileSchema, { createDefaultCommands: true });
     // Then the config should have default commands defined
     expect(Object.keys(config.aggregateCommands ?? {})).toEqual(['create', 'update', 'delete']);
-    expect(config.aggregateCommands.create).toEqual(
-      expect.objectContaining({
-        eventType: 'CREATED',
-        operation: 'create',
-        payloadSchema: profileSchema,
-      })
-    );
+    expect(config.aggregateCommands.create).toMatchObject({
+      eventType: 'CREATED',
+      operation: 'create',
+      payloadSchema: profileSchema,
+    });
     expect(config.aggregateCommands.create.construct({ name: 'tester' })).toEqual({
       name: 'tester',
     });
-    expect(config.aggregateCommands.update).toEqual(
-      expect.objectContaining({ eventType: 'UPDATED', operation: 'update' })
-    );
+    expect(config.aggregateCommands.update).toMatchObject({
+      eventType: 'UPDATED',
+      operation: 'update',
+    });
     expect(config.aggregateCommands.update.payloadSchema?.parse({})).toEqual({});
     expect(
       config.aggregateCommands.update.reduce(createAggregateObject({ id: 'p1', name: 'tester' }), {
         name: 'tester 2',
       })
-    ).toEqual(expect.objectContaining({ name: 'tester 2' }));
-    expect(config.aggregateCommands.delete).toEqual(
-      expect.objectContaining({ eventType: 'DELETED', operation: 'delete' })
-    );
+    ).toMatchObject({ name: 'tester 2' });
+    expect(config.aggregateCommands.delete).toMatchObject({
+      eventType: 'DELETED',
+      operation: 'delete',
+    });
     expect(config.aggregateCommands.delete.payloadSchema?.parse(undefined)).toBe(undefined);
   });
 
@@ -256,5 +252,16 @@ describe('create aggregate config', () => {
       () => base.repository(createFakeAggregateRepository<BaseState>())
       // Then an error should be thrown
     ).toThrowError('Repository already set');
+  });
+
+  it('can pass register function to aggregate config', () => {
+    // Given a register function
+    const register = jest.fn();
+    // When a new config is constructed with a register function
+    const base = ctx.aggregate('PROFILE', { register });
+    // And the register function is called on the builder
+    base.register();
+    // Then the register function should be called with the config
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ aggregateType: 'PROFILE' }));
   });
 });

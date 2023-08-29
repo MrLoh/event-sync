@@ -45,17 +45,17 @@ export type EventBus<E extends AnyAggregateEvent = AnyAggregateEvent> = {
  * @returns an event bus
  */
 export const createEventBus = <E extends AnyAggregateEvent = AnyAggregateEvent>(): EventBus<E> => {
-  const resetter = new Subject<null>();
-  let source = new Subject<E>();
-  let destination = new ReplaySubject<E>();
-  let subscription = source.subscribe(destination);
-  const emitter = resetter.asObservable().pipe(
+  const resetter$ = new Subject<null>();
+  let source$ = new Subject<E>();
+  let destination$ = new ReplaySubject<E>();
+  let subscription = source$.subscribe(destination$);
+  const emitter$ = resetter$.asObservable().pipe(
     startWith(null),
-    switchMap(() => destination)
+    switchMap(() => destination$)
   );
   let terminated = false;
   // if no error handler is provided, throw error if terminated with error
-  const defaultErrorSubscription = emitter.subscribe({
+  const defaultErrorSubscription = emitter$.subscribe({
     error: (error: Error) => {
       // istanbul ignore next -- cannot test global errors
       throw error;
@@ -64,32 +64,33 @@ export const createEventBus = <E extends AnyAggregateEvent = AnyAggregateEvent>(
   return {
     dispatch: (event: E) => {
       if (terminated) throw new Error('cannot dispatch, event bus has been terminated');
-      source.next(event);
+      source$.next(event);
     },
     terminate: (error?: Error) => {
       terminated = true;
-      if (error) source.error(error);
-      else source.complete();
+      if (error) source$.error(error);
+      else source$.complete();
     },
     subscribe: (subscriber: (event: E) => void) => {
-      return emitter.subscribe({ next: subscriber, error: () => {} }).unsubscribe;
+      const subscription = emitter$.subscribe({ next: subscriber, error: () => {} });
+      return () => subscription.unsubscribe();
     },
     onTermination: (callback: (error?: Error) => void) => {
       defaultErrorSubscription.unsubscribe();
-      emitter.subscribe({ error: callback, complete: callback });
+      emitter$.subscribe({ error: callback, complete: callback });
     },
     get terminated() {
       return terminated;
     },
     reset: () => {
       if (terminated) {
-        source = new Subject<E>();
+        source$ = new Subject<E>();
         terminated = false;
       }
       subscription.unsubscribe();
-      destination = new ReplaySubject<E>();
-      subscription = source.subscribe(destination);
-      resetter.next(null);
+      destination$ = new ReplaySubject<E>();
+      subscription = source$.subscribe(destination$);
+      resetter$.next(null);
     },
   };
 };
