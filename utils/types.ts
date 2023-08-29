@@ -20,7 +20,7 @@ export type AggregateEvent<A extends string, O extends Operation, T extends stri
   /** The id of the account that dispatched the event */
   createdBy?: string;
   /** The id of the device that dispatched the event */
-  createdOn?: string;
+  createdOn: string;
   /** The id of the previous event */
   prevId?: string;
   /** The date-time the event was recorded at on the server */
@@ -94,6 +94,8 @@ export type BaseState = {
   updatedAt: Date;
   /** The version number of the aggregate */
   version: number;
+  /** The date-time the last event for the aggregate was recorded at on the server */
+  lastRecordedAt?: Date;
 };
 
 export type AggregateRepository<S> = {

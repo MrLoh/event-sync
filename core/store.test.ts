@@ -3,8 +3,8 @@ import { createStore } from './store';
 import { createEventBus } from './event-bus';
 import { InvalidInputError, UnauthorizedError } from '../utils/errors';
 import {
-  fakeAuthAdapter,
   createId,
+  createFakeAuthAdapter,
   createFakeAggregateRepository,
   createFakeEventsRepository,
   createAggregateObject,
@@ -16,10 +16,14 @@ describe('create store', () => {
   const profileSchema = z.object({ name: z.string().min(2) });
   type Profile = z.infer<typeof profileSchema>;
 
-  const setup = (repository?: AggregateRepository<Profile & BaseState>) => {
-    const aggregateRepository = repository || createFakeAggregateRepository<Profile & BaseState>();
+  const setup = (overwrites?: {
+    aggregateRepository?: AggregateRepository<Profile & BaseState>;
+    authPolicy?: (account: Account | null) => boolean;
+  }) => {
+    const aggregateRepository =
+      overwrites?.aggregateRepository ?? createFakeAggregateRepository<Profile & BaseState>();
     const context = {
-      authAdapter: fakeAuthAdapter,
+      authAdapter: createFakeAuthAdapter(),
       createId,
       eventsRepository: createFakeEventsRepository(),
       eventBus: createEventBus(),
@@ -33,25 +37,31 @@ describe('create store', () => {
             eventType: 'CREATED',
             operation: 'create' as const,
             payloadSchema: profileSchema,
-            authPolicy: (account: Account | null) => account?.roles.includes('creator') ?? false,
+            authPolicy:
+              overwrites?.authPolicy ??
+              ((account: Account | null) => account?.roles.includes('creator') ?? false),
             construct: ({ name }: Profile) => ({ name }),
           },
           update: {
             eventType: 'UPDATED',
             operation: 'update' as const,
             payloadSchema: profileSchema.partial(),
-            authPolicy: (account: Account | null) => account?.roles.includes('updater') ?? false,
+            authPolicy:
+              overwrites?.authPolicy ??
+              ((account: Account | null) => account?.roles.includes('updater') ?? false),
             reduce: (state: Profile, payload: Partial<Profile>) => ({ ...state, ...payload }),
           },
           delete: {
             eventType: 'DELETED',
             operation: 'delete' as const,
             payloadSchema: z.undefined(),
-            authPolicy: (account: Account | null) => account?.roles.includes('updater') ?? false,
+            authPolicy:
+              overwrites?.authPolicy ??
+              ((account: Account | null) => account?.roles.includes('updater') ?? false),
             destruct: () => {},
           },
         },
-        aggregateRepository: aggregateRepository,
+        aggregateRepository,
       },
       context
     );
@@ -103,6 +113,9 @@ describe('create store', () => {
   it('command adds metadata to event and state', async () => {
     // Given a store
     const { store, context } = setup();
+    // And an auth adapter
+    const account = await context.authAdapter.getAccount();
+    const deviceId = await context.authAdapter.getDeviceId();
     // And a subscriber to the event bus
     const events = [] as AnyAggregateEvent[];
     const subscriber = jest.fn((e) => events.push(e));
@@ -115,16 +128,16 @@ describe('create store', () => {
         operation: 'create',
         id: expect.any(String),
         aggregateType: 'PROFILE',
-        createdBy: 'device1',
-        createdOn: 'account1',
+        createdBy: account?.id,
+        createdOn: deviceId,
         dispatchedAt: expect.any(Date),
         prevId: undefined,
       })
     );
     // And the state has appropriate metadata
     expect(store.state[id]).toMatchObject({
-      createdBy: 'device1',
-      createdOn: 'account1',
+      createdBy: account?.id,
+      createdOn: deviceId,
       lastEventId: events[0].id,
       createdAt: events[0].dispatchedAt,
       updatedAt: events[0].dispatchedAt,
@@ -235,7 +248,7 @@ describe('create store', () => {
     const aggregateRepository = createFakeAggregateRepository<Profile & BaseState>();
     await aggregateRepository.insert('p1', createAggregateObject({ id: 'p1', name: 'tester' }));
     // When a new store is created with the repository and initialized
-    const { store } = setup(aggregateRepository);
+    const { store } = setup({ aggregateRepository });
     await store.initialize();
     // Then the state is loaded from the repository
     expect(store.state['p1']).toMatchObject({ id: 'p1', name: 'tester' });
@@ -295,6 +308,30 @@ describe('create store', () => {
     expect(store.state[oldProfileId]).toMatchObject({ id: oldProfileId, name: 'tester' });
     expect(subscriber).toHaveBeenCalledWith(
       expect.objectContaining({ [oldProfileId]: expect.any(Object) })
+    );
+  });
+
+  it('can mark aggregate as recorded', async () => {
+    // Given a store with an existing profile that was created without an account
+    const { store, context } = setup({ authPolicy: () => true });
+    jest.spyOn(context.authAdapter, 'getAccount').mockImplementation(async () => null);
+    const id = await store.create({ name: 'tester' });
+    expect(store.state[id]).toMatchObject({ createdBy: undefined });
+    // And a subscriber to the store
+    const subscriber = jest.fn();
+    store.subscribe(subscriber);
+    // When the aggregate is marked as recorded
+    const accountId = createId();
+    await store.markRecorded(id, new Date(), accountId);
+    // Then the state is marked as recorded
+    expect(store.state[id]).toMatchObject({ lastRecordedAt: expect.any(Date) });
+    // And the created by is set to the account id
+    expect(store.state[id].createdBy).toBe(accountId);
+    // And the subscriber is called
+    expect(subscriber).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [id]: expect.objectContaining({ createdBy: accountId, lastRecordedAt: expect.any(Date) }),
+      })
     );
   });
 });

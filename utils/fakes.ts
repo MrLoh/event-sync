@@ -1,8 +1,10 @@
-import { NotFoundError } from '../utils/errors';
+import { NotFoundError, UnauthorizedError } from '../utils/errors';
 import type {
+  AccountInterface,
   AggregateEvent,
   AggregateRepository,
   AnyAggregateEvent,
+  AuthAdapter,
   BaseState,
   ConnectionStatusAdapter,
   EventServerAdapter,
@@ -24,12 +26,16 @@ export const createId = () => Math.random().toString(36).slice(2, 14).padEnd(12,
  * Fake auth adapter that always returns account id 'account1' with roles 'creator' and 'updater'
  * and device id 'device1'
  */
-export const fakeAuthAdapter = {
-  getAccount: async (): Promise<Account | null> => ({
-    id: 'account1',
-    roles: ['creator', 'updater'],
-  }),
-  getDeviceId: async () => 'device1',
+export const createFakeAuthAdapter = (): AuthAdapter<Account> => {
+  const accountId = createId();
+  const deviceId = createId();
+  return {
+    getAccount: async (): Promise<Account | null> => ({
+      id: accountId,
+      roles: ['creator', 'updater'],
+    }),
+    getDeviceId: async () => deviceId,
+  };
 };
 
 /**
@@ -79,7 +85,9 @@ type AnyRecordedAggregateEvent = AnyAggregateEvent & { recordedAt: Date };
  * @returns An object that implements the EventServerAdapter interface, with additional properties
  * for simulating dispatching events from other sources and getting and setting recorded events
  */
-export const createFakeEventServerAdapter = (): EventServerAdapter & {
+export const createFakeEventServerAdapter = (
+  authAdapter: AuthAdapter<Account> = createFakeAuthAdapter()
+): EventServerAdapter & {
   dispatch(event: AnyRecordedAggregateEvent): void;
   recordedEvents: AnyRecordedAggregateEvent[];
 } => {
@@ -87,9 +95,14 @@ export const createFakeEventServerAdapter = (): EventServerAdapter & {
   return {
     recordedEvents: [],
     async record(event: AnyAggregateEvent) {
+      const account = await authAdapter.getAccount();
+      if (!account) throw new UnauthorizedError('Account not found');
+      if (event.createdBy && account.id !== event.createdBy) {
+        throw new UnauthorizedError('Event created by different account');
+      }
       const recordedAt = new Date();
       this.recordedEvents.push({ ...event, recordedAt });
-      return { eventId: event.id, recordedAt, recordedBy: 'account1' };
+      return { eventId: event.id, recordedAt, recordedBy: account.id };
     },
     async fetch(lastRecordedEventId: string | null): Promise<AnyAggregateEvent[]> {
       const lastEvent = this.recordedEvents.find((e) => e.id === lastRecordedEventId);
@@ -143,9 +156,9 @@ export const createFakeAggregateRepository = <S extends BaseState>(): AggregateR
  * @returns The aggregate object with metadata
  */
 export const createAggregateObject = <S extends { id: string }>(state: S): S & BaseState => ({
-  createdBy: 'device1',
-  createdOn: 'account1',
-  lastEventId: 'event1',
+  createdBy: createId(),
+  createdOn: createId(),
+  lastEventId: createId(),
   createdAt: new Date(),
   updatedAt: new Date(),
   version: 1,
@@ -165,7 +178,8 @@ export const createEvent = <
   T extends string,
   O extends Operation = 'create',
   P = {},
-  R extends Date | undefined = undefined
+  R extends Date | undefined = undefined,
+  U extends string | undefined = undefined
 >(
   aggregateType: A,
   eventType: T,
@@ -175,8 +189,20 @@ export const createEvent = <
     aggregateId,
     prevId,
     recordedAt,
-  }: { operation?: O; payload?: P; aggregateId?: string; prevId?: string; recordedAt?: R } = {}
-): AggregateEvent<A, O, T, P> & (R extends Date ? { recordedAt: Date } : {}) =>
+    createdBy,
+    createdOn,
+  }: {
+    operation?: O;
+    payload?: P;
+    aggregateId?: string;
+    prevId?: string;
+    recordedAt?: R;
+    createdBy?: U;
+    createdOn?: string;
+  } = {}
+): AggregateEvent<A, O, T, P> &
+  (R extends Date ? { recordedAt: Date } : {}) &
+  (U extends string ? { recordedBy: string } : {}) =>
   // @ts-ignore -- typescript doesn't understand the ternary type
   ({
     id: createId(),
@@ -186,8 +212,8 @@ export const createEvent = <
     type: eventType,
     payload: payload,
     dispatchedAt: new Date(),
-    createdBy: 'account1',
-    createdOn: 'device1',
+    createdBy: createdBy ?? createId(),
+    createdOn: createdOn ?? createId(),
     recordedAt: recordedAt,
     prevId,
   } satisfies AggregateEvent<A, O, T, P>);

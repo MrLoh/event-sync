@@ -56,7 +56,8 @@ export type Broker<U extends AccountInterface> = {
     }
   ) => AggregateConfigBuilder<U, A, BaseState, {}, true>;
   /**
-   * Syncs events that failed to record
+   * Syncs events that failed to record. This should be called after login since events are only
+   * synced if the account adapter returns an account.
    *
    * @returns a promise that resolves when the sync is complete
    * @throws {StorageError} if the sync fails to persist event recording
@@ -65,11 +66,13 @@ export type Broker<U extends AccountInterface> = {
   sync: () => Promise<void>;
   /**
    * Reset the event bus, delete all events from the repository, and reset the state of all stores
-   * including deleting all aggregates from the corresponding repositories
+   * including deleting all aggregates from the corresponding repositories. This should be called on
+   * logout.
    */
   reset: () => Promise<void>;
   /**
-   * Cleanup the broker by unsubscribing from all subscriptions
+   * Cleanup the broker by unsubscribing from all subscriptions. This should be called on the server
+   * after a request has been resolved.
    */
   cleanup: () => void;
 };
@@ -111,17 +114,24 @@ export const createBroker = <U extends AccountInterface>({
   if (onTermination) eventBus.onTermination(onTermination);
 
   const recordEvent = async (event: AnyAggregateEvent) => {
-    if (!eventServerAdapter || !(await authAdapter.getAccount())) return;
-    const { res, err: recordError } = await tryCatch(() => eventServerAdapter.record(event));
-    if (recordError) return;
-    if (eventsRepository) {
+    const account = await authAdapter.getAccount();
+    if (!eventServerAdapter || !account) return;
+    // TODO: make errors from event server adapter more specific
+    const { res } = await tryCatch(() => eventServerAdapter.record(event));
+    if (res && eventsRepository) {
       await eventsRepository.markRecorded(res.eventId, res.recordedAt, res.recordedBy);
+      stores[event.aggregateType]?.markRecorded(event.aggregateId, res.recordedAt, res.recordedBy);
     }
+  };
+
+  // TODO: device way to guarantee at least once delivery of events to the store to ensure the state
+  // is updated and the event is persisted in the repository
+  const dispatchEvent = async (event: AnyAggregateEvent) => {
+    if (!eventBus.terminated) eventBus.dispatch(event);
   };
 
   let activeSync: Promise<void> | null = null;
   const sync = async () => {
-    // istanbul ignore next -- this doesn't need to be tested
     if (activeSync) return activeSync;
     activeSync = (async () => {
       if (eventsRepository && eventServerAdapter) {
@@ -130,14 +140,11 @@ export const createBroker = <U extends AccountInterface>({
         if (events.length) await Promise.all(events.map(recordEvent));
         // fetch any new events
         const lastRecordedEvent = await eventsRepository.getLastRecordedEvent();
+        // TODO: make errors from event server adapter more specific
         const { res: newEvents } = await tryCatch(() =>
-          // istanbul ignore next -- don't need to test all undefined edge cases
           eventServerAdapter?.fetch(lastRecordedEvent?.id || null)
         );
-        // istanbul ignore next -- don't need to test all undefined edge cases
-        if (newEvents?.length && !eventBus.terminated) {
-          newEvents.map((e) => eventBus.dispatch(e));
-        }
+        if (newEvents?.length) newEvents.map(dispatchEvent);
       }
       activeSync = null;
     })();
@@ -151,9 +158,7 @@ export const createBroker = <U extends AccountInterface>({
     // subscribe to server events to dispatch them on client
     let unsubscribeFromServerAdapter: (() => void) | undefined;
     if (eventServerAdapter?.subscribe) {
-      unsubscribeFromServerAdapter = eventServerAdapter.subscribe((event) => {
-        if (!eventBus.terminated) eventBus.dispatch(event);
-      });
+      unsubscribeFromServerAdapter = eventServerAdapter.subscribe(dispatchEvent);
     }
     // retry syncing events periodically and when device comes online
     const periodicSyncSubscription = merge(
@@ -165,14 +170,13 @@ export const createBroker = <U extends AccountInterface>({
     // return unsubscribe function
     return () => {
       unsubscribeFromEventBus();
-      // istanbul ignore next -- unnecessary to test case without server adapter
       unsubscribeFromServerAdapter?.();
       periodicSyncSubscription.unsubscribe();
     };
   };
   let unsubscribe = initialize();
 
-  const stores: AggregateStore<U, any, any, any>[] = [];
+  const stores: { [aggregateType: string]: AggregateStore<U, any, any, any> } = {};
   const register = <
     A extends string,
     S extends BaseState,
@@ -183,7 +187,7 @@ export const createBroker = <U extends AccountInterface>({
     agg: AggregateConfig<U, A, S, C>
   ) => {
     const store = createStore(agg, { authAdapter, createId, eventsRepository, eventBus });
-    stores.push(store);
+    stores[agg.aggregateType] = store;
     return store;
   };
 
@@ -200,7 +204,7 @@ export const createBroker = <U extends AccountInterface>({
     unsubscribe();
     if (eventsRepository) await eventsRepository.deleteAll();
     eventBus.reset();
-    await Promise.all(stores.map((store) => store.reset()));
+    await Promise.all(Object.values(stores).map((store) => store.reset()));
     unsubscribe = initialize();
   };
 

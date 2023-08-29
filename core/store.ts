@@ -1,7 +1,7 @@
 import { z, type ZodSchema } from 'zod';
 import { BehaviorSubject } from 'rxjs';
 import { mapObject } from '../utils/mapObject';
-import { InvalidInputError, UnauthorizedError } from '../utils/errors';
+import { InvalidInputError, UnauthorizedError, NotFoundError } from '../utils/errors';
 
 import type { EventBus } from './event-bus';
 import type {
@@ -55,6 +55,10 @@ export type AggregateStore<
    */
   subscribe: (fn: (state: { [id: string]: S }) => void) => () => void;
   /**
+   * Mark an aggregate as recorded to set recorded by if undefined and last recorded by fields
+   */
+  markRecorded: (aggregateId: string, recordedAt: Date, recordedBy: string) => Promise<void>;
+  /**
    * Reset state of the aggregates to the initial state and delete all entries from the aggregate
    */
   reset: () => Promise<void>;
@@ -78,9 +82,10 @@ export const baseStateSchema = z.object({
   createdOn: z.string(),
   lastEventId: z.string(),
   createdAt: z.date(),
-  updatedAt: z.date().optional(),
+  updatedAt: z.date(),
   version: z.number(),
-});
+  lastRecordedAt: z.date().optional(),
+}) satisfies ZodSchema<BaseState>;
 
 /** will JSON stringify and parse to for example remove undefined values */
 const ensureEncodingSafety = <O extends Record<string, any>>(obj: O): O => {
@@ -132,6 +137,8 @@ export const createStore = <
   // process events for this aggregate from the event bus. This needs to be separate from the
   // command processing functions since events may come both from the application as well as from
   // the server.
+  // TODO: identify synchronization conflicts and automatically resolve them by reapplying events in
+  // a deterministic order.
   ctx.eventBus.subscribe(async (event) => {
     await initialization;
     const currStoreState = collection$.value;
@@ -172,6 +179,7 @@ export const createStore = <
           createdAt: event.dispatchedAt,
           updatedAt: event.dispatchedAt,
           lastEventId: event.id,
+          lastRecordedAt: event.recordedAt,
           version: 1,
         } as S);
         collection$.next({ ...currStoreState, [event.aggregateId]: state });
@@ -189,6 +197,7 @@ export const createStore = <
           createdAt: currState.createdAt,
           updatedAt: event.dispatchedAt,
           lastEventId: event.id,
+          lastRecordedAt: event.recordedAt ?? currState.lastRecordedAt,
           version: currState.version + 1,
         } satisfies S);
         collection$.next({ ...currStoreState, [event.aggregateId]: nextState });
@@ -237,8 +246,8 @@ export const createStore = <
         aggregateId,
         type,
         payload,
-        createdBy: deviceId,
-        createdOn: account?.id,
+        createdBy: account?.id,
+        createdOn: deviceId,
         dispatchedAt: new Date(),
         prevId: lastEventId,
       };
@@ -275,7 +284,14 @@ export const createStore = <
   }) as AggregateCommandFunctions<U, A, S, C>;
 
   // ensure commands don't overwrite default store methods
-  const restrictedProps = ['get', 'subscribe', 'reset', 'initialize', 'initialized'];
+  const restrictedProps = [
+    'get',
+    'subscribe',
+    'reset',
+    'initialize',
+    'initialized',
+    'markRecorded',
+  ];
   if (restrictedProps.some((prop) => agg.aggregateCommands?.hasOwnProperty(prop))) {
     // istanbul ignore next
     throw new Error(`commands cannot have the following names: ${restrictedProps.join(', ')}`);
@@ -293,12 +309,27 @@ export const createStore = <
       if (agg.aggregateRepository) await agg.aggregateRepository.deleteAll();
       collection$.next({});
     },
+    markRecorded: async (aggregateId: string, recordedAt: Date, recordedBy: string) => {
+      await initialization;
+      const currState = collection$.value[aggregateId];
+      if (!currState) throw new NotFoundError(`Aggregate with id ${aggregateId} not found`);
+      const nextState = stateSchema.parse({
+        ...currState,
+        createdBy: currState.createdBy ?? recordedBy,
+        lastRecordedAt: recordedAt,
+      } as S);
+      collection$.next({ ...collection$.value, [aggregateId]: nextState });
+      if (agg.aggregateRepository) {
+        await agg.aggregateRepository.update(aggregateId, nextState);
+      }
+    },
     initialize: () => {
       return initialization;
     },
     get initialized() {
       return initialized;
     },
+    // spreading the command functions needs to be last because the getter doesn't work otherwise
     ...fns,
   };
 };

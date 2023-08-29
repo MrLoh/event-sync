@@ -1,13 +1,13 @@
 import { z } from 'zod';
 import { createBroker } from './broker';
 import {
+  createId,
   createEvent,
   createFakeAggregateRepository,
   createFakeConnectionStatusAdapter,
   createFakeEventServerAdapter,
   createFakeEventsRepository,
-  createId,
-  fakeAuthAdapter,
+  createFakeAuthAdapter,
 } from '../utils/fakes';
 import { BaseState } from '../utils/types';
 
@@ -21,12 +21,14 @@ describe('create broker', () => {
     const retrySyncInterval = 30;
     const eventsRepository = createFakeEventsRepository();
     const aggregateRepository = createFakeAggregateRepository<{ name: string } & BaseState>();
-    const eventServerAdapter = overwrites?.eventServerAdapter ?? createFakeEventServerAdapter();
+    const authAdapter = createFakeAuthAdapter();
+    const eventServerAdapter =
+      overwrites?.eventServerAdapter ?? createFakeEventServerAdapter(authAdapter);
     const connectionStatusAdapter = createFakeConnectionStatusAdapter();
     const broker = createBroker({
       createId,
       defaultPolicy: () => true,
-      authAdapter: fakeAuthAdapter,
+      authAdapter,
       eventsRepository,
       eventServerAdapter,
       connectionStatusAdapter,
@@ -53,7 +55,7 @@ describe('create broker', () => {
     // Given a broker with a create id and a default policy function
     const createId = jest.fn(() => 'test');
     const defaultPolicy = jest.fn(() => true);
-    const broker = createBroker({ authAdapter: fakeAuthAdapter, createId, defaultPolicy });
+    const broker = createBroker({ authAdapter: createFakeAuthAdapter(), createId, defaultPolicy });
     // When an aggregate config is defined
     const { config } = broker
       .aggregate('PROFILE')
@@ -66,7 +68,7 @@ describe('create broker', () => {
 
   it('can act as context to create aggregate store', async () => {
     // Given a broker with an auth adapter and an event repository
-    const authAdapter = fakeAuthAdapter;
+    const authAdapter = createFakeAuthAdapter();
     jest.spyOn(authAdapter, 'getAccount');
     jest.spyOn(authAdapter, 'getDeviceId');
     const eventsRepository = createFakeEventsRepository();
@@ -121,6 +123,65 @@ describe('create broker', () => {
       type: 'PROFILE_CREATED',
       payload: { name: 'test' },
       recordedAt: expect.any(Date),
+    });
+    // And the store state is updated
+    expect(store.state[id]).toMatchObject({ lastRecordedAt: expect.any(Date) });
+  });
+
+  it('only syncs events to the server if there is an account', async () => {
+    // Given a broker with a server and auth adapter
+    const { broker, store, eventServerAdapter, eventsRepository } = setup();
+    jest.spyOn(eventServerAdapter, 'record');
+    // And there is no account setup on the device
+    jest.spyOn(broker.authAdapter, 'getAccount').mockImplementation(async () => null);
+    // When an event is dispatched
+    const id = await store.create({ name: 'test' });
+    // Then the store state is updated
+    expect(store.state[id]).toMatchObject({ id, name: 'test', createdBy: undefined });
+    // And the event is persisted to the events repository
+    expect(eventsRepository.events).toHaveLength(1);
+    expect(eventsRepository.events[0]).toMatchObject({
+      aggregateId: id,
+      type: 'PROFILE_CREATED',
+      payload: { name: 'test' },
+      createdBy: undefined,
+    });
+    // But it is not recorded with the event server adapter
+    await jest.advanceTimersByTimeAsync(0);
+    expect(eventServerAdapter.record).not.toHaveBeenCalled();
+    // When an account becomes available
+    const accountId = createId();
+    jest
+      .spyOn(broker.authAdapter, 'getAccount')
+      .mockImplementation(async () => ({ id: accountId, roles: [] }));
+    // And a sync is triggered
+    await broker.sync();
+    // Then the events are synced to the backend
+    await jest.advanceTimersByTimeAsync(0);
+    expect(eventServerAdapter.record).toHaveBeenCalledTimes(1);
+    expect(eventServerAdapter.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aggregateId: id,
+        type: 'PROFILE_CREATED',
+        payload: { name: 'test' },
+        createdBy: accountId,
+      })
+    );
+    // And the events are marked as recorded and created by the account
+    expect(eventsRepository.events.filter((e) => e.recordedAt)).toHaveLength(1);
+    expect(eventsRepository.events).toContainEqual(
+      expect.objectContaining({
+        aggregateId: id,
+        type: 'PROFILE_CREATED',
+        payload: { name: 'test' },
+        createdBy: accountId,
+        recordedAt: expect.any(Date),
+      })
+    );
+    // And the store state is updated
+    expect(store.state[id]).toMatchObject({
+      createdBy: accountId,
+      lastRecordedAt: expect.any(Date),
     });
   });
 
@@ -305,13 +366,18 @@ describe('create broker', () => {
     // And the events were recorded
     expect(eventsRepository.events).toHaveLength(2);
     await jest.advanceTimersByTimeAsync(0);
+    // And a subscriber to the store
+    const subscriber = jest.fn();
+    store.subscribe(subscriber);
     // When the broker is reset
     await broker.reset();
     // Then the events are deleted from the repository
     expect(eventsRepository.events).toHaveLength(0);
     // And the store state is reset
     expect(store.state).toEqual({});
-    // And the aggregate repository is reset
+    // And all subscribers are notified
+    expect(subscriber).toHaveBeenCalledWith({});
+    // And the events are deleted from the repository
     expect(await aggregateRepository.getAll()).toEqual({});
   });
 
@@ -341,71 +407,4 @@ describe('create broker', () => {
     await jest.advanceTimersByTimeAsync(0);
     expect(eventsRepository.events).toHaveLength(0);
   });
-
-  // it('Saved events are transmitted once the device logs into an account', async () => {
-  //   // Given an aggregate was created
-  //   jest.spyOn(eventServerAdapter, 'record');
-  //   jest
-  //     .spyOn(authAdapter, 'getAccount')
-  //     .mockImplementation(async () => ({ id: 'account1', roles: ['creator'] }));
-  //   await store.dispatch('testAggregateId', 'CREATED_TEST_AGGREGATE', {
-  //     name: 'my aggregate',
-  //     value: 'first value',
-  //   });
-  //   await new Promise((resolve) => setTimeout(resolve, 100));
-  //   expect(eventServerAdapter.record).toHaveBeenCalledTimes(1);
-  //   jest.spyOn(eventServerAdapter, 'record').mockClear();
-  //   // And there is no account setup on the device
-  //   jest.spyOn(authAdapter, 'getAccount').mockImplementation(async () => null);
-  //   // And there are events that were dispatched
-  //   await store.dispatch('testAggregateId', 'LIKED_TEST_AGGREGATE', {});
-  //   await store.dispatch('testAggregateId', 'LIKED_TEST_AGGREGATE', {});
-  //   await new Promise((resolve) => setTimeout(resolve, 0));
-  //   expect(
-  //     eventsRepository.storage.filter((e) => e.type === 'LIKED_TEST_AGGREGATE' && e.recordedAt)
-  //   ).toHaveLength(0);
-  //   // When an account is created
-  //   jest
-  //     .spyOn(authAdapter, 'getAccount')
-  //     .mockImplementation(async () => ({ id: 'account2', roles: [] }));
-  //   authAdapter.loginCallbacks.forEach((cb) => cb());
-  //   await new Promise((resolve) => setTimeout(resolve, 0));
-  //   // Then the events are synced to the backend
-  //   expect(eventServerAdapter.record).toHaveBeenCalledTimes(2);
-  //   // And the events are marked as recorded
-  //   expect(
-  //     eventsRepository.storage.filter((e) => e.type === 'LIKED_TEST_AGGREGATE' && e.recordedAt)
-  //   ).toHaveLength(2);
-  //   // And the events are marked as created by the account
-  //   expect(eventsRepository.storage).toContainEqual(
-  //     expect.objectContaining({
-  //       type: 'LIKED_TEST_AGGREGATE',
-  //       createdBy: 'account2',
-  //     })
-  //   );
-  // });
-
-  // it('clears up event queue when the device logs out', async () => {
-  //   // Given events were recorded on a logged in device
-  //   await store.dispatch('testAggregateId', 'CREATED_TEST_AGGREGATE', {
-  //     name: 'my aggregate',
-  //     value: 'first value',
-  //   });
-  //   expect(await store.get()).toEqual({
-  //     testAggregateId: expect.objectContaining({ name: 'my aggregate', value: 'first value' }),
-  //   });
-  //   // And there is a subscriber to the store
-  //   const subscriber = jest.fn();
-  //   store.subscribe(subscriber);
-  //   // When the device logs out
-  //   jest.spyOn(authAdapter, 'getAccount').mockImplementation(async () => null);
-  //   authAdapter.logoutCallbacks.forEach((cb) => cb());
-  //   await new Promise((resolve) => setTimeout(resolve, 0));
-  //   // Then the store state is reset
-  //   expect(await store.get()).toEqual({});
-  //   // And all subscribers are notified
-  //   expect(subscriber).toHaveBeenCalledWith({});
-  //   // And the events are deleted from the repository
-  //   expect(eventsRepository.storage).toHaveLength(0);
-  // });
 });

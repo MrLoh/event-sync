@@ -1,6 +1,7 @@
+import { UnauthorizedError } from './errors';
 import {
   createId,
-  fakeAuthAdapter,
+  createFakeAuthAdapter,
   createFakeEventsRepository,
   createEvent,
   createAggregateObject,
@@ -36,18 +37,28 @@ describe('createId', () => {
 
 describe('fakeAuthAdapter', () => {
   it('returns static account object', async () => {
+    // Given an auth adapter
+    const authAdapter = createFakeAuthAdapter();
     // When the account is fetched
-    const account = await fakeAuthAdapter.getAccount();
-    // Then it is the static account object
-    expect(account?.id).toBe('account1');
+    const account = await authAdapter.getAccount();
+    // Then it has an id of length 12
+    expect(account?.id).toEqual(expect.any(String));
+    expect(account?.id.length).toBe(12);
+    // And it has roles
     expect(account?.roles).toEqual(['creator', 'updater']);
+    // And the account id does not change
+    expect(await authAdapter.getAccount()).toEqual(account);
   });
 
   it('returns static device id', async () => {
+    const authAdapter = createFakeAuthAdapter();
     // When the device id is fetched
-    const deviceId = await fakeAuthAdapter.getDeviceId();
-    // Then it is the static device id
-    expect(deviceId).toBe('device1');
+    const deviceId = await authAdapter.getDeviceId();
+    // Then it is an id of length 12
+    expect(deviceId).toEqual(expect.any(String));
+    expect(deviceId.length).toBe(12);
+    // And the device id does not change
+    expect(await authAdapter.getDeviceId()).toBe(deviceId);
   });
 });
 
@@ -96,17 +107,18 @@ describe('createFakeEventsRepository', () => {
     await repository.insert(event);
     // When the event is marked as recorded
     const recordedAt = new Date();
-    await repository.markRecorded(event.id, recordedAt, 'account1');
+    const accountId = createId();
+    await repository.markRecorded(event.id, recordedAt, accountId);
     // Then the recorded time and account are saved
     expect(repository.events[0].recordedAt).toBe(recordedAt);
-    expect(repository.events[0].createdBy).toBe('account1');
+    expect(repository.events[0].createdBy).toBe(accountId);
   });
 
   it('throws an error if event to be marked as recorded is not found', async () => {
     // Given a repository without events
     const repository = createFakeEventsRepository();
     // When trying to mark an event as recorded
-    await expect(repository.markRecorded('1', new Date(), 'account1')).rejects.toThrow(
+    await expect(repository.markRecorded('1', new Date(), createId())).rejects.toThrow(
       // Then an error is thrown
       'Event 1 not found'
     );
@@ -156,10 +168,13 @@ describe('createFakeEventsRepository', () => {
 
 describe('createFakeEventServerAdapter', () => {
   it('can record an event', async () => {
-    // Given an event server adapter
-    const eventServerAdapter = createFakeEventServerAdapter();
+    // Given an auth adapter
+    const authAdapter = createFakeAuthAdapter();
+    const account = await authAdapter.getAccount();
+    // And an event server adapter
+    const eventServerAdapter = createFakeEventServerAdapter(authAdapter);
     // When an event is recorded
-    const event = createEvent('TEST', 'TEST');
+    const event = createEvent('TEST', 'TEST', { createdBy: account?.id });
     await eventServerAdapter.record(event);
     // Then the event is saved
     expect(eventServerAdapter.recordedEvents).toContainEqual(
@@ -168,7 +183,36 @@ describe('createFakeEventServerAdapter', () => {
     // And the event has a recorded time
     expect(eventServerAdapter.recordedEvents[0].recordedAt).toEqual(expect.any(Date));
     // And the event has a recorded by
-    expect(eventServerAdapter.recordedEvents[0].createdBy).toBe('account1');
+    expect(eventServerAdapter.recordedEvents[0].createdBy).toBe(account?.id);
+  });
+
+  it('throws an error if no account is found when trying to record an event', async () => {
+    // Given an auth adapter that returns no account
+    const authAdapter = createFakeAuthAdapter();
+    jest.spyOn(authAdapter, 'getAccount').mockImplementation(async () => null);
+    // And an event server adapter
+    const eventServerAdapter = createFakeEventServerAdapter(authAdapter);
+    // When an event is recorded
+    const event = createEvent('TEST', 'TEST');
+    // Then an error is thrown
+    await expect(eventServerAdapter.record(event)).rejects.toThrow(UnauthorizedError);
+    await expect(eventServerAdapter.record(event)).rejects.toThrow('Account not found');
+  });
+
+  it('throws an error if the account id on the event does not match the server', async () => {
+    // Given an auth adapter
+    const authAdapter = createFakeAuthAdapter();
+    const account = await authAdapter.getAccount();
+    // And an event server adapter
+    const eventServerAdapter = createFakeEventServerAdapter(authAdapter);
+    // When an event is recorded with a different account id
+    const event = createEvent('TEST', 'TEST', { createdBy: createId() });
+    expect(event.createdBy).not.toBe(account?.id);
+    // Then an error is thrown
+    await expect(eventServerAdapter.record(event)).rejects.toThrow(UnauthorizedError);
+    await expect(eventServerAdapter.record(event)).rejects.toThrow(
+      'Event created by different account'
+    );
   });
 
   it('can fetch events that were recorded after a specified event', async () => {
@@ -288,9 +332,9 @@ describe('createAggregateObject', () => {
     // Then the aggregate object has the expected properties
     expect(aggregate).toHaveProperty('id', 'aggregate1');
     expect(aggregate).toHaveProperty('name', 'Test Aggregate');
-    expect(aggregate).toHaveProperty('createdBy', 'device1');
-    expect(aggregate).toHaveProperty('createdOn', 'account1');
-    expect(aggregate).toHaveProperty('lastEventId', 'event1');
+    expect(aggregate).toHaveProperty('createdBy', expect.any(String));
+    expect(aggregate).toHaveProperty('createdOn', expect.any(String));
+    expect(aggregate).toHaveProperty('lastEventId', expect.any(String));
     expect(aggregate).toHaveProperty('createdAt', expect.any(Date));
     expect(aggregate).toHaveProperty('updatedAt', expect.any(Date));
     expect(aggregate).toHaveProperty('version', 1);
@@ -308,8 +352,8 @@ describe('createEvent', () => {
     expect(event).toHaveProperty('aggregateId', expect.any(String));
     expect(event).toHaveProperty('type', 'TEST');
     expect(event).toHaveProperty('payload', {});
-    expect(event).toHaveProperty('createdBy', 'account1');
-    expect(event).toHaveProperty('createdOn', 'device1');
+    expect(event).toHaveProperty('createdBy', expect.any(String));
+    expect(event).toHaveProperty('createdOn', expect.any(String));
     expect(event).toHaveProperty('dispatchedAt', expect.any(Date));
     // And the event has no previous event id
     expect(event).toHaveProperty('prevId', undefined);
@@ -351,6 +395,24 @@ describe('createEvent', () => {
     const event = createEvent('TEST', 'TEST', { recordedAt });
     // Then the event has the custom recorded time
     expect(event).toHaveProperty('recordedAt', recordedAt);
+  });
+
+  it('can create an event with a custom device id', () => {
+    // Given an account id
+    const accountId = createId();
+    // When an event is created with a custom created by
+    const event = createEvent('TEST', 'TEST', { createdBy: accountId });
+    // Then the event has the custom created by
+    expect(event).toHaveProperty('createdBy', accountId);
+  });
+
+  it('can create an event with a custom account id', () => {
+    // Given a device id
+    const deviceId = createId();
+    // When an event is created with a custom created on
+    const event = createEvent('TEST', 'TEST', { createdOn: deviceId });
+    // Then the event has the custom created on
+    expect(event).toHaveProperty('createdOn', deviceId);
   });
 });
 
