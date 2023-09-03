@@ -7,20 +7,20 @@ import type { EventBus } from './event-bus';
 import type {
   AccountInterface,
   BaseState,
-  AggregateCommandConfig,
+  AggregateEventConfig,
   Operation,
   AuthAdapter,
   EventsRepository,
   AggregateConfig,
 } from '../utils/types';
 
-type AggregateCommandFunctions<
+type AggregateEventDispatchers<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  C extends { [fn: string]: AggregateCommandConfig<U, A, Operation, string, S, any> }
+  C extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
 > = {
-  [F in keyof C]: C[F] extends AggregateCommandConfig<U, A, infer O, any, S, infer P>
+  [F in keyof C]: C[F] extends AggregateEventConfig<U, A, infer O, any, S, infer P>
     ? O extends 'create'
       ? P extends undefined
         ? () => Promise<S>
@@ -41,8 +41,8 @@ export type AggregateStore<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  C extends { [fn: string]: AggregateCommandConfig<U, A, any, any, S, any> }
-> = AggregateCommandFunctions<U, A, S, C> & {
+  C extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> }
+> = AggregateEventDispatchers<U, A, S, C> & {
   /**
    * object containing the states of all aggregates keyed by id
    */
@@ -104,7 +104,7 @@ export const createStore = <
   A extends string,
   S extends BaseState,
   C extends {
-    [fn: string]: AggregateCommandConfig<U, A, Operation, string, S, any>;
+    [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any>;
   }
 >(
   agg: AggregateConfig<U, A, S, C>,
@@ -135,7 +135,7 @@ export const createStore = <
   })();
 
   // process events for this aggregate from the event bus. This needs to be separate from the
-  // command processing functions since events may come both from the application as well as from
+  // event processing functions since events may come both from the application as well as from
   // the server.
   // TODO: identify synchronization conflicts and automatically resolve them by reapplying events in
   // a deterministic order.
@@ -143,9 +143,12 @@ export const createStore = <
     await initialization;
     const currStoreState = collection$.value;
 
-    const commandByEventType = Object.values(agg.aggregateCommands).reduce(
-      (acc, cmd) => ({ ...acc, [`${agg.aggregateType}_${cmd.eventType}`]: cmd }),
-      {} as { [eventType: string]: AggregateCommandConfig<U, A, Operation, string, S, any> }
+    const eventByEventType = Object.values(agg.aggregateEvents).reduce(
+      (acc, eventConfig) => ({
+        ...acc,
+        [`${agg.aggregateType}_${eventConfig.eventType}`]: eventConfig,
+      }),
+      {} as { [eventType: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
     );
 
     // TODO: add support for transactional commits
@@ -170,7 +173,7 @@ export const createStore = <
     if (event.aggregateType !== agg.aggregateType) return;
     switch (event.operation) {
       case 'create': {
-        const constructor = commandByEventType[event.type].construct;
+        const constructor = eventByEventType[event.type].construct;
         const state = stateSchema.parse({
           ...constructor!(event.payload),
           id: event.aggregateId,
@@ -186,7 +189,7 @@ export const createStore = <
         return await persistEventAndAggregate(state);
       }
       case 'update': {
-        const reducer = commandByEventType[event.type].reduce;
+        const reducer = eventByEventType[event.type].reduce;
         const currState = collection$.value[event.aggregateId];
         const nextState = stateSchema.parse({
           ...currState,
@@ -204,7 +207,7 @@ export const createStore = <
         return await persistEventAndAggregate(nextState);
       }
       case 'delete': {
-        const destructor = commandByEventType[event.type].destruct;
+        const destructor = eventByEventType[event.type].destruct;
         const state = collection$.value[event.aggregateId];
         destructor?.(state, event.payload);
         const { [event.aggregateId]: _, ...rest } = currStoreState;
@@ -217,23 +220,23 @@ export const createStore = <
     }
   });
 
-  // generate map of command functions from command config which
+  // generate map of event dispatchers from event config which
   // 1. validates event payload,
   // 2. checks authorization, and
   // 3. adds metadata
-  // and than dispatches the event to the event bus. The processing of events is handled by the
+  // and then dispatches the event to the event bus. The processing of events is handled by the
   // subscription to the event bus above.
-  const fns = mapObject(agg.aggregateCommands, (cmd) => {
+  const dispatchers = mapObject(agg.aggregateEvents, (eventConfig) => {
     const dispatch = async (aggregateId: string, payload: any, lastEventId?: string) => {
       // generate event
-      const type = `${agg.aggregateType}_${cmd.eventType}` as const;
+      const type = `${agg.aggregateType}_${eventConfig.eventType}` as const;
       if (payload) {
         payload = ensureEncodingSafety(payload);
       }
-      if (cmd.payloadSchema) {
-        const res = cmd.payloadSchema.safeParse(payload);
+      if (eventConfig.payloadSchema) {
+        const res = eventConfig.payloadSchema.safeParse(payload);
         if (!res.success) {
-          throw new InvalidInputError(`Invalid payload for command ${type}`, res.error);
+          throw new InvalidInputError(`Invalid payload for event ${type}`, res.error);
         }
         payload = res.data;
       }
@@ -241,7 +244,7 @@ export const createStore = <
       const account = await ctx.authAdapter.getAccount();
       const event = {
         id: ctx.createId(),
-        operation: cmd.operation,
+        operation: eventConfig.operation,
         aggregateType: agg.aggregateType,
         aggregateId,
         type,
@@ -252,7 +255,7 @@ export const createStore = <
         prevId: lastEventId,
       };
       // check authorization
-      if (!cmd.authPolicy(account, event)) {
+      if (!eventConfig.authPolicy(account, event)) {
         throw new UnauthorizedError(
           `Account ${account?.id} is not authorized to dispatch event ${event.type}`
         );
@@ -261,7 +264,7 @@ export const createStore = <
       ctx.eventBus.dispatch(event);
     };
 
-    switch (cmd.operation) {
+    switch (eventConfig.operation) {
       case 'create':
         return async (payload: any): Promise<string> => {
           await initialization;
@@ -279,11 +282,11 @@ export const createStore = <
         };
       default:
         // istanbul ignore next
-        throw new Error(`Invalid operation ${cmd.operation}`);
+        throw new Error(`Invalid operation ${eventConfig.operation}`);
     }
-  }) as AggregateCommandFunctions<U, A, S, C>;
+  }) as AggregateEventDispatchers<U, A, S, C>;
 
-  // ensure commands don't overwrite default store methods
+  // ensure events don't overwrite default store methods
   const restrictedProps = [
     'get',
     'subscribe',
@@ -292,9 +295,9 @@ export const createStore = <
     'initialized',
     'markRecorded',
   ];
-  if (restrictedProps.some((prop) => agg.aggregateCommands?.hasOwnProperty(prop))) {
+  if (restrictedProps.some((prop) => agg.aggregateEvents?.hasOwnProperty(prop))) {
     // istanbul ignore next
-    throw new Error(`commands cannot have the following names: ${restrictedProps.join(', ')}`);
+    throw new Error(`events cannot have the following names: ${restrictedProps.join(', ')}`);
   }
 
   return {
@@ -329,7 +332,7 @@ export const createStore = <
     get initialized() {
       return initialized;
     },
-    // spreading the command functions needs to be last because the getter doesn't work otherwise
-    ...fns,
+    // spreading the event functions needs to be last because the getter doesn't work otherwise
+    ...dispatchers,
   };
 };

@@ -146,7 +146,7 @@ export type Policy<
   P
 > = (account: U | null, event: AggregateEvent<A, O, `${A}_${T}`, P>) => boolean;
 
-export type AggregateCommandConfig<
+export type AggregateEventConfig<
   U extends AccountInterface,
   A extends string,
   O extends Operation,
@@ -206,7 +206,7 @@ export type AggregateConfig<
   A extends string,
   S extends BaseState,
   C extends {
-    [fn: string]: AggregateCommandConfig<U, A, Operation, string, S, any>;
+    [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any>;
   }
 > = {
   /** The type of the aggregate */
@@ -216,7 +216,7 @@ export type AggregateConfig<
   /** The repository for persisting the aggregates state in */
   aggregateRepository?: AggregateRepository<S>;
 
-  aggregateCommands: C;
+  aggregateEvents: C;
   createId?: () => string;
 };
 

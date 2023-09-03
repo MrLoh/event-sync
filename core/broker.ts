@@ -6,7 +6,7 @@ import { createAggregateContext, type AggregateConfigBuilder } from './aggregate
 
 import type {
   AccountInterface,
-  AggregateCommandConfig,
+  AggregateEventConfig,
   AggregateConfig,
   AnyAggregateEvent,
   AuthAdapter,
@@ -37,7 +37,7 @@ export type Broker<U extends AccountInterface> = {
     A extends string,
     S extends BaseState,
     C extends {
-      [fn: string]: AggregateCommandConfig<U, A, any, any, S, any>;
+      [fn: string]: AggregateEventConfig<U, A, any, any, S, any>;
     }
   >(
     agg: AggregateConfig<U, A, S, C>
@@ -181,7 +181,7 @@ export const createBroker = <U extends AccountInterface>({
     A extends string,
     S extends BaseState,
     C extends {
-      [fn: string]: AggregateCommandConfig<U, A, Operation, string, S, any>;
+      [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any>;
     }
   >(
     agg: AggregateConfig<U, A, S, C>

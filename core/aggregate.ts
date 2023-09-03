@@ -5,7 +5,7 @@ import type { ZodSchema } from 'zod';
 import type {
   AggregateRepository,
   AccountInterface,
-  AggregateCommandConfig,
+  AggregateEventConfig,
   BaseState,
   Operation,
   AggregateEvent,
@@ -14,7 +14,7 @@ import type {
 } from '../utils/types';
 import type { AggregateStore } from './store';
 
-type AggregateCommandConfigBuilder<
+type AggregateEventConfigBuilder<
   U extends AccountInterface,
   A extends string,
   O extends Operation,
@@ -22,37 +22,37 @@ type AggregateCommandConfigBuilder<
   S extends BaseState,
   P
 > = {
-  /** The command config that is being constructed */
-  config: AggregateCommandConfig<U, A, O, T, S, P>;
+  /** The event config that is being constructed */
+  config: AggregateEventConfig<U, A, O, T, S, P>;
   /**
-   * Set the payload schema for the command
+   * Set the payload schema for the event
    *
    * @param schema the payload schema
-   * @returns the command builder for chaining
+   * @returns the event builder for chaining
    */
   payload: <Payload>(
     schema: ZodSchema<Payload>
-  ) => AggregateCommandConfigBuilder<U, A, O, T, S, Payload>;
+  ) => AggregateEventConfigBuilder<U, A, O, T, S, Payload>;
   /**
-   * Set the policy that determines if the account is authorized to execute the command
+   * Set the policy that determines if the account is authorized to execute the event
    *
    * @param policy the policy function
-   * @returns the command builder for chaining
+   * @returns the event builder for chaining
    */
   policy: (
     policy: (account: U | null, event: AggregateEvent<A, O, `${A}_${T}`, P>) => boolean
-  ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
+  ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
 } & (O extends 'create'
   ? {
       /**
        * Set the function that constructs the initial state of the aggregate
        *
        * @param construct the constructor function
-       * @returns the command builder for chaining
+       * @returns the event builder for chaining
        */
       constructor: (
         construct: (payload: P) => Omit<S, keyof BaseState>
-      ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
+      ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
     }
   : O extends 'update'
   ? {
@@ -60,11 +60,11 @@ type AggregateCommandConfigBuilder<
        * Set the function that updates the state of the aggregate
        *
        * @param reduce the reducer function
-       * @returns the command builder for chaining
+       * @returns the event builder for chaining
        */
       reducer: (
         reduce: (payload: P, state: S) => Omit<S, keyof BaseState>
-      ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
+      ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
     }
   : O extends 'delete'
   ? {
@@ -72,25 +72,25 @@ type AggregateCommandConfigBuilder<
        * Set the function to call before deleting the aggregate
        *
        * @param destruct the destructor function
-       * @returns the command builder for chaining
+       * @returns the event builder for chaining
        */
       destructor: (
         destruct: (payload: P, state: S) => void
-      ) => AggregateCommandConfigBuilder<U, A, O, T, S, P>;
+      ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
     }
   : never);
 
-type DefaultCommandsConfig<U extends AccountInterface, A extends string, S extends BaseState> = {
-  create: AggregateCommandConfig<U, A, 'create', 'CREATED', S, Omit<S, keyof BaseState>>;
-  update: AggregateCommandConfig<U, A, 'update', 'UPDATED', S, Partial<Omit<S, keyof BaseState>>>;
-  delete: AggregateCommandConfig<U, A, 'delete', 'DELETED', S, undefined>;
+type DefaultEventsConfig<U extends AccountInterface, A extends string, S extends BaseState> = {
+  create: AggregateEventConfig<U, A, 'create', 'CREATED', S, Omit<S, keyof BaseState>>;
+  update: AggregateEventConfig<U, A, 'update', 'UPDATED', S, Partial<Omit<S, keyof BaseState>>>;
+  delete: AggregateEventConfig<U, A, 'delete', 'DELETED', S, undefined>;
 };
 
 export type AggregateConfigBuilder<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  C extends { [fn: string]: AggregateCommandConfig<U, A, any, any, S, any> },
+  C extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
   registerable = false
 > = {
   /** The aggregate config that is being constructed */
@@ -105,8 +105,8 @@ export type AggregateConfigBuilder<
   schema: <
     State extends Omit<S, keyof BaseState>,
     SchemaOptions extends {
-      /** indicates if default create, update, and delete commands should be defined based on the schema */
-      createDefaultCommands: boolean;
+      /** indicates if default create, update, and delete events should be defined based on the schema */
+      createDefaultEvents: boolean;
     }
   >(
     schema: ZodSchema<State>,
@@ -115,9 +115,9 @@ export type AggregateConfigBuilder<
     U,
     A,
     State & BaseState,
-    SchemaOptions['createDefaultCommands'] extends true
-      ? DefaultCommandsConfig<U, A, State & BaseState>
-      : { [fn: string]: AggregateCommandConfig<U, A, any, any, BaseState & State, any> },
+    SchemaOptions['createDefaultEvents'] extends true
+      ? DefaultEventsConfig<U, A, State & BaseState>
+      : { [fn: string]: AggregateEventConfig<U, A, any, any, BaseState & State, any> },
     registerable
   >;
   /**
@@ -130,29 +130,23 @@ export type AggregateConfigBuilder<
     repository: AggregateRepository<S>
   ) => AggregateConfigBuilder<U, A, S, C, registerable>;
   /**
-   * Set the commands for the aggregate
+   * Set the events for the aggregate
    *
-   * @param maker a function that takes a command builder and returns a map of commands
+   * @param maker a function that takes a event builder and returns a map of events
    * @returns the aggregate builder for chaining
    */
-  commands: <
-    Commands extends {
-      [fn: string]: { config: AggregateCommandConfig<U, A, any, any, S, any> };
+  events: <
+    Events extends {
+      [fn: string]: { config: AggregateEventConfig<U, A, any, any, S, any> };
     }
   >(
     maker: (
-      command: <O extends Operation, T extends string>(
+      event: <O extends Operation, T extends string>(
         eventType: T,
         operation: O
-      ) => AggregateCommandConfigBuilder<U, A, O, T, S, unknown>
-    ) => Commands
-  ) => AggregateConfigBuilder<
-    U,
-    A,
-    S,
-    { [K in keyof Commands]: Commands[K]['config'] },
-    registerable
-  >;
+      ) => AggregateEventConfigBuilder<U, A, O, T, S, unknown>
+    ) => Events
+  ) => AggregateConfigBuilder<U, A, S, { [K in keyof Events]: Events[K]['config'] }, registerable>;
 } & (registerable extends true
   ? {
       /**
@@ -196,69 +190,69 @@ export const createAggregateContext = <U extends AccountInterface>(ctx: {
       }
     ): AggregateConfigBuilder<U, A, BaseState, {}, R extends undefined ? false : true> => {
       /**
-       * Define a command for the aggregate
+       * Define a event for the aggregate
        *
        * @param eventType the event type
-       * @param operation the operation the command performs
-       * @returns the command builder for chaining
+       * @param operation the operation the event performs
+       * @returns the event builder for chaining
        */
-      const command = <O extends Operation, T extends string>(eventType: T, operation: O) => {
+      const event = <O extends Operation, T extends string>(eventType: T, operation: O) => {
         // @ts-ignore -- we define action functions for each type of operation and throw an error if mismatched
-        const cmdBuilder: AggregateCommandConfigBuilder<U, A, O, T, any, any> = {
+        const eventBuilder: AggregateEventConfigBuilder<U, A, O, T, any, any> = {
           config: {
             eventType,
             operation,
             authPolicy: options?.defaultPolicy ?? ctx.defaultPolicy,
           },
           payload: <Payload>(schema: ZodSchema<Payload>) => {
-            cmdBuilder.config.payloadSchema = schema;
-            return cmdBuilder;
+            eventBuilder.config.payloadSchema = schema;
+            return eventBuilder;
           },
           policy: (policy) => {
-            cmdBuilder.config.authPolicy = policy;
-            return cmdBuilder;
+            eventBuilder.config.authPolicy = policy;
+            return eventBuilder;
           },
           constructor: (constructor) => {
             // istanbul ignore next
-            if (cmdBuilder.config.operation !== 'create') {
+            if (eventBuilder.config.operation !== 'create') {
               throw new Error('Constructor is only valid for create operations');
             }
-            cmdBuilder.config.construct = constructor;
-            return cmdBuilder;
+            eventBuilder.config.construct = constructor;
+            return eventBuilder;
           },
           reducer: (reducer) => {
             // istanbul ignore next
-            if (cmdBuilder.config.operation !== 'update') {
+            if (eventBuilder.config.operation !== 'update') {
               throw new Error('Reducer is only valid for update operations');
             }
-            cmdBuilder.config.reduce = reducer;
-            return cmdBuilder;
+            eventBuilder.config.reduce = reducer;
+            return eventBuilder;
           },
           destructor: (destructor) => {
             // istanbul ignore next
-            if (cmdBuilder.config.operation !== 'delete') {
+            if (eventBuilder.config.operation !== 'delete') {
               throw new Error('Destructor is only valid for delete operations');
             }
-            cmdBuilder.config.destruct = destructor;
-            return cmdBuilder;
+            eventBuilder.config.destruct = destructor;
+            return eventBuilder;
           },
         };
-        return cmdBuilder;
+        return eventBuilder;
       };
 
       // extract config from builder functions and throws an error if any configuration is missing
-      const parseCommandsConfig = (commandBuilders: {
-        [fn: string]: { config: AggregateCommandConfig<U, A, any, any, any, any> };
+      const parseEventsConfig = (eventBuilders: {
+        [fn: string]: { config: AggregateEventConfig<U, A, any, any, any, any> };
       }) => {
-        return mapObject(commandBuilders, ({ config }, key) => {
+        return mapObject(eventBuilders, ({ config }, key) => {
           if (!config.authPolicy) {
-            throw new Error(`missing policy definition for ${String(key)} command`);
+            throw new Error(`missing policy definition for ${String(key)} event`);
           }
           if (!config.construct && config.operation === 'create') {
-            throw new Error(`missing constructor definition for ${String(key)} command`);
+            throw new Error(`missing constructor definition for ${String(key)} event`);
           }
           if (!config.reduce && config.operation === 'update') {
-            throw new Error(`missing reducer definition for ${String(key)} command`);
+            throw new Error(`missing reducer definition for ${String(key)} event`);
           }
           return config;
         });
@@ -268,24 +262,24 @@ export const createAggregateContext = <U extends AccountInterface>(ctx: {
         config: {
           aggregateType,
           createId: options?.createId || ctx.createId,
-          aggregateCommands: {},
+          aggregateEvents: {},
         } as AggregateConfig<U, A, any, any>,
         schema: (schema, schemaOptions) => {
           if (aggBuilder.config.aggregateSchema) throw new Error('Schema already set');
           aggBuilder.config.aggregateSchema = schema;
-          if (schemaOptions?.createDefaultCommands) {
-            if (Object.keys(aggBuilder.config.aggregateCommands).length > 0) {
-              throw new Error('Commands already set');
+          if (schemaOptions?.createDefaultEvents) {
+            if (Object.keys(aggBuilder.config.aggregateEvents).length > 0) {
+              throw new Error('Events already set');
             }
-            aggBuilder.config.aggregateCommands = parseCommandsConfig({
-              create: command('CREATED', 'create')
+            aggBuilder.config.aggregateEvents = parseEventsConfig({
+              create: event('CREATED', 'create')
                 .payload(schema)
                 .constructor((payload) => payload),
-              update: command('UPDATED', 'update')
+              update: event('UPDATED', 'update')
                 // @ts-ignore -- zod can't infer that because S is an object ZodSchema<S> must be a ZodObject
                 .payload(schema.partial() as ZodSchema<any>)
                 .reducer((state, payload) => ({ ...state, ...payload })),
-              delete: command('DELETED', 'delete').payload(z.undefined()),
+              delete: event('DELETED', 'delete').payload(z.undefined()),
             });
           }
           return aggBuilder;
@@ -295,11 +289,11 @@ export const createAggregateContext = <U extends AccountInterface>(ctx: {
           aggBuilder.config.aggregateRepository = repository;
           return aggBuilder;
         },
-        commands: (maker) => {
-          if (Object.keys(aggBuilder.config.aggregateCommands).length > 0) {
-            throw new Error('Commands already set');
+        events: (maker) => {
+          if (Object.keys(aggBuilder.config.aggregateEvents).length > 0) {
+            throw new Error('Events already set');
           }
-          aggBuilder.config.aggregateCommands = parseCommandsConfig(maker(command));
+          aggBuilder.config.aggregateEvents = parseEventsConfig(maker(event));
           return aggBuilder;
         },
       };
@@ -324,12 +318,12 @@ export const createAggregateContext = <U extends AccountInterface>(ctx: {
 /** Extract the union of event types from an aggregate config */
 export type AggregateEventTypeFromConfig<
   C extends {
-    aggregateCommands: {
-      [fn: string]: AggregateCommandConfig<any, any, any, any, any, any>;
+    aggregateEvents: {
+      [fn: string]: AggregateEventConfig<any, any, any, any, any, any>;
     };
   }
 > = {
-  [F in keyof C]: C[F] extends AggregateCommandConfig<any, infer A, infer O, infer T, any, infer P>
+  [F in keyof C]: C[F] extends AggregateEventConfig<any, infer A, infer O, infer T, any, infer P>
     ? AggregateEvent<A, O, `${A}_${T}`, P>
     : never;
 }[keyof C];

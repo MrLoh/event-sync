@@ -32,7 +32,7 @@ describe('create store', () => {
       {
         aggregateType: 'PROFILE',
         aggregateSchema: profileSchema,
-        aggregateCommands: {
+        aggregateEvents: {
           create: {
             eventType: 'CREATED',
             operation: 'create' as const,
@@ -68,10 +68,10 @@ describe('create store', () => {
     return { context, store, aggregateRepository };
   };
 
-  it('command updates store state', async () => {
+  it('event updates store state', async () => {
     // Given a store
     const { store } = setup();
-    // When a command is called
+    // When a event is called
     const id = await store.create({ name: 'test' });
     // Then the state is updated
     expect(store.state[id]).toMatchObject({ id, name: 'test' });
@@ -84,7 +84,7 @@ describe('create store', () => {
     const subscriber = jest.fn();
     store.subscribe(subscriber);
     subscriber.mockClear();
-    // When a command is called
+    // When a event is called
     const id = await store.create({ name: 'test' });
     // Then the subscriber is called
     expect(subscriber).toHaveBeenCalledWith(
@@ -92,13 +92,13 @@ describe('create store', () => {
     );
   });
 
-  it('command dispatches event to event bus', async () => {
+  it('event dispatches event to event bus', async () => {
     // Given a store
     const { store, context } = setup();
     // And a subscriber to the event bus
     const subscriber = jest.fn();
     context.eventBus.subscribe(subscriber);
-    // When a command is called
+    // When a event is called
     const id = await store.create({ name: 'test' });
     // Then an event is dispatched to the given aggregate
     expect(subscriber).toHaveBeenCalledWith(
@@ -110,7 +110,7 @@ describe('create store', () => {
     );
   });
 
-  it('command adds metadata to event and state', async () => {
+  it('event adds metadata to event and state', async () => {
     // Given a store
     const { store, context } = setup();
     // And an auth adapter
@@ -120,7 +120,7 @@ describe('create store', () => {
     const events = [] as AnyAggregateEvent[];
     const subscriber = jest.fn((e) => events.push(e));
     context.eventBus.subscribe(subscriber);
-    // When a command is called
+    // When a event is called
     const id = await store.create({ name: 'test' });
     // Then an event is dispatched which has appropriate metadata
     expect(subscriber).toHaveBeenCalledWith(
@@ -145,14 +145,14 @@ describe('create store', () => {
     });
   });
 
-  it('command validates payload', async () => {
+  it('event validates payload', async () => {
     // Given a store
     const { store, context } = setup();
     // And a subscriber to the event bus
     const subscriber = jest.fn();
     context.eventBus.subscribe(subscriber);
     try {
-      // When an invalid payload is passed to a command
+      // When an invalid payload is passed to a event
       await store.create({ name: '' });
     } catch (e) {
       // Then an InvalidInputError is thrown
@@ -169,18 +169,18 @@ describe('create store', () => {
     }
   });
 
-  it('command validates authorization', async () => {
+  it('event validates authorization', async () => {
     // Given a store
     const { store, context } = setup();
     // And a subscriber to the event bus
     const subscriber = jest.fn();
     context.eventBus.subscribe(subscriber);
-    // And an account that is unauthorized for the command
+    // And an account that is unauthorized for the event
     jest
       .spyOn(context.authAdapter, 'getAccount')
       .mockImplementationOnce(async () => ({ id: 'account2', roles: [] }));
     try {
-      // When the command is called
+      // When the event is called
       await store.create({ name: 'test' });
     } catch (e) {
       // Then an UnauthorizedError is thrown
@@ -193,19 +193,19 @@ describe('create store', () => {
     }
   });
 
-  it('command persists state in repository', async () => {
+  it('event persists state in repository', async () => {
     // Given a store with a repository
     const { store, aggregateRepository } = setup();
-    // When a command is called
+    // When a event is called
     const id = await store.create({ name: 'test' });
     // Then the state is persisted in the repository
     expect(await aggregateRepository.getOne(id)).toMatchObject({ id, name: 'test' });
   });
 
-  it('command persists event in repository', async () => {
+  it('event persists event in repository', async () => {
     // Given a store
     const { store, context } = setup();
-    // When a command is called
+    // When a event is called
     const id = await store.create({ name: 'test' });
     // Then the event is persisted in the repository
     expect(context.eventsRepository.events).toContainEqual(
@@ -218,11 +218,11 @@ describe('create store', () => {
     );
   });
 
-  it('command can update state', async () => {
+  it('event can update state', async () => {
     // Given a store with an existing profile
     const { store, aggregateRepository } = setup();
     const id = await store.create({ name: 'tester' });
-    // When an update command is called
+    // When an update event is called
     await store.update(id, { name: 'renamed tester' });
     // Then the state is updated
     expect(store.state[id]).toMatchObject({ id, name: 'renamed tester' });
@@ -230,11 +230,11 @@ describe('create store', () => {
     expect(await aggregateRepository.getOne(id)).toMatchObject({ id, name: 'renamed tester' });
   });
 
-  it('command can delete state', async () => {
+  it('event can delete state', async () => {
     // Given a store with an existing profile
     const { store, aggregateRepository } = setup();
     const id = await store.create({ name: 'tester' });
-    // When a delete command is called
+    // When a delete event is called
     await store.delete(id);
     // Then the state is deleted
     expect(store.state).toEqual({});
@@ -295,7 +295,7 @@ describe('create store', () => {
     // And a termination handler to the event bus
     const handleError = jest.fn();
     context.eventBus.onTermination(handleError);
-    // When a create command is called
+    // When a create event is called
     const newProfileId = await store.create({ name: 'test' });
     // Then the event bus is terminated with the error
     expect(handleError).toHaveBeenCalledWith(new Error('insert failed'));

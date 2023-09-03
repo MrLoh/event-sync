@@ -42,21 +42,21 @@ describe('create aggregate config', () => {
     expect(await profilesRepository.getOne('p1')).toMatchObject({ name: 'tester', version: 1 });
   });
 
-  it('should generate aggregate config with commands', () => {
+  it('should generate aggregate config with events', () => {
     // Given a payload schema
     const profileSchema = z.object({ name: z.string().min(2) });
     // And a constructor function
     const constructor = (payload: { name: string }) => payload;
-    // When a new config is constructed with commands
+    // When a new config is constructed with events
     const { config } = ctx
       .aggregate('PROFILE')
       .schema(profileSchema)
-      .commands((command) => ({
-        create: command('CREATED', 'create').payload(profileSchema).constructor(constructor),
+      .events((event) => ({
+        create: event('CREATED', 'create').payload(profileSchema).constructor(constructor),
       }));
-    // Then the config should have the correct commands
-    expect(Object.keys(config.aggregateCommands ?? {})).toEqual(['create']);
-    expect(config.aggregateCommands.create).toMatchObject({
+    // Then the config should have the correct events
+    expect(Object.keys(config.aggregateEvents ?? {})).toEqual(['create']);
+    expect(config.aggregateEvents.create).toMatchObject({
       eventType: 'CREATED',
       operation: 'create',
       payloadSchema: profileSchema,
@@ -64,43 +64,43 @@ describe('create aggregate config', () => {
     });
   });
 
-  it('should throw error if command action is not defined', () => {
+  it('should throw error if event action is not defined', () => {
     // Given a base aggregate config definition
     const baseConfig = () => ctx.aggregate('PROFILE').schema(z.object({ name: z.string().min(2) }));
-    // When trying to define a create command without a constructor
+    // When trying to define a create event without a constructor
     expect(
-      () => baseConfig().commands((command) => ({ create: command('CREATED', 'create') }))
+      () => baseConfig().events((event) => ({ create: event('CREATED', 'create') }))
       // Then an error should be thrown
     ).toThrowError('missing constructor definition');
-    // When trying to define an update command without a reducer
+    // When trying to define an update event without a reducer
     expect(
-      () => baseConfig().commands((command) => ({ create: command('UPDATED', 'update') }))
+      () => baseConfig().events((event) => ({ create: event('UPDATED', 'update') }))
       // Then an error should be thrown
     ).toThrowError('missing reducer definition');
-    // When trying to define a delete command without a destructor
+    // When trying to define a delete event without a destructor
     expect(
-      () => baseConfig().commands((command) => ({ create: command('DELETED', 'delete') }))
+      () => baseConfig().events((event) => ({ create: event('DELETED', 'delete') }))
       // Then no error should be thrown
     ).not.toThrowError('missing destructor definition');
   });
 
-  it('can define specific policy for command', () => {
+  it('can define specific policy for event', () => {
     // Given an aggregate with a default policy
     const base = ctx
       .aggregate('PROFILE', { defaultPolicy: () => false })
       .schema(z.object({ name: z.string().min(2) }));
-    // When defining a command with a policy
-    const commandPolicy = jest.fn(() => true);
-    const { config } = base.commands((command) => ({
-      update: command('UPDATED', 'update')
+    // When defining a event with a policy
+    const eventPolicy = jest.fn(() => true);
+    const { config } = base.events((event) => ({
+      update: event('UPDATED', 'update')
         .payload(z.object({ name: z.string().min(2) }))
-        .policy(commandPolicy)
+        .policy(eventPolicy)
         .reducer((state, payload) => ({ ...state, ...payload })),
     }));
-    // Then the command policy should be used
-    expect(config.aggregateCommands.update.authPolicy).toBe(commandPolicy);
-    config.aggregateCommands.update.authPolicy({ id: 'tester', roles: [] }, {} as any);
-    expect(commandPolicy).toHaveBeenCalled();
+    // Then the event policy should be used
+    expect(config.aggregateEvents.update.authPolicy).toBe(eventPolicy);
+    config.aggregateEvents.update.authPolicy({ id: 'tester', roles: [] }, {} as any);
+    expect(eventPolicy).toHaveBeenCalled();
   });
 
   it('can define default policy on aggregate', () => {
@@ -109,33 +109,33 @@ describe('create aggregate config', () => {
     const base = ctx
       .aggregate('PROFILE', { defaultPolicy: aggregatePolicy })
       .schema(z.object({ name: z.string().min(2) }));
-    // When the command policy is not defined
-    const { config } = base.commands((command) => ({
-      delete: command('DELETED', 'delete')
+    // When the event policy is not defined
+    const { config } = base.events((event) => ({
+      delete: event('DELETED', 'delete')
         .payload(z.object({ name: z.string().min(2) }))
         .destructor(() => {}),
     }));
     // Then the aggregate policy should be used
-    expect(config.aggregateCommands.delete.authPolicy).toBe(aggregatePolicy);
-    config.aggregateCommands.delete.authPolicy({ id: 'tester', roles: [] }, {} as any);
+    expect(config.aggregateEvents.delete.authPolicy).toBe(aggregatePolicy);
+    config.aggregateEvents.delete.authPolicy({ id: 'tester', roles: [] }, {} as any);
   });
 
   it('can define default policy on context', () => {
     // Given a default policy is defined on the context
     const contextPolicy = jest.fn(() => true);
     const ctx = createAggregateContext<Account>({ createId, defaultPolicy: contextPolicy });
-    // When the aggregate and command policy is not defined
+    // When the aggregate and event policy is not defined
     const { config } = ctx
       .aggregate('PROFILE')
       .schema(z.object({ name: z.string().min(2) }))
-      .commands((command) => ({
-        create: command('CREATED', 'create')
+      .events((event) => ({
+        create: event('CREATED', 'create')
           .payload(z.object({ name: z.string().min(2) }))
           .constructor((state) => state),
       }));
     // Then the context policy should be used
-    expect(config.aggregateCommands.create.authPolicy).toBe(contextPolicy);
-    config.aggregateCommands.create.authPolicy({ id: 'tester', roles: [] }, {} as any);
+    expect(config.aggregateEvents.create.authPolicy).toBe(contextPolicy);
+    config.aggregateEvents.create.authPolicy({ id: 'tester', roles: [] }, {} as any);
     expect(contextPolicy).toHaveBeenCalled();
   });
 
@@ -143,11 +143,11 @@ describe('create aggregate config', () => {
     // Given no default policy is defined on the context or the aggregate
     const ctx = createAggregateContext<Account>({ createId });
     const base = ctx.aggregate('PROFILE').schema(z.object({ name: z.string().min(2) }));
-    // When trying to define a command without a policy
+    // When trying to define a event without a policy
     expect(
       () =>
-        base.commands((command) => ({
-          create: command('CREATED', 'create')
+        base.events((event) => ({
+          create: event('CREATED', 'create')
             .payload(z.object({ name: z.string().min(2) }))
             .constructor((state) => state),
         }))
@@ -179,59 +179,59 @@ describe('create aggregate config', () => {
     expect(createId).toHaveBeenCalled();
   });
 
-  it('can define default commands based on schema', () => {
+  it('can define default events based on schema', () => {
     // Given a schema
     const profileSchema = z.object({ name: z.string().min(2) });
-    // When a new config is constructed with a schema and the setDefaultCommands option
+    // When a new config is constructed with a schema and the setDefaultEvents option
     const { config } = ctx
       .aggregate('PROFILE')
-      .schema(profileSchema, { createDefaultCommands: true });
-    // Then the config should have default commands defined
-    expect(Object.keys(config.aggregateCommands ?? {})).toEqual(['create', 'update', 'delete']);
-    expect(config.aggregateCommands.create).toMatchObject({
+      .schema(profileSchema, { createDefaultEvents: true });
+    // Then the config should have default events defined
+    expect(Object.keys(config.aggregateEvents ?? {})).toEqual(['create', 'update', 'delete']);
+    expect(config.aggregateEvents.create).toMatchObject({
       eventType: 'CREATED',
       operation: 'create',
       payloadSchema: profileSchema,
     });
-    expect(config.aggregateCommands.create.construct({ name: 'tester' })).toEqual({
+    expect(config.aggregateEvents.create.construct({ name: 'tester' })).toEqual({
       name: 'tester',
     });
-    expect(config.aggregateCommands.update).toMatchObject({
+    expect(config.aggregateEvents.update).toMatchObject({
       eventType: 'UPDATED',
       operation: 'update',
     });
-    expect(config.aggregateCommands.update.payloadSchema?.parse({})).toEqual({});
+    expect(config.aggregateEvents.update.payloadSchema?.parse({})).toEqual({});
     expect(
-      config.aggregateCommands.update.reduce(createAggregateObject({ id: 'p1', name: 'tester' }), {
+      config.aggregateEvents.update.reduce(createAggregateObject({ id: 'p1', name: 'tester' }), {
         name: 'tester 2',
       })
     ).toMatchObject({ name: 'tester 2' });
-    expect(config.aggregateCommands.delete).toMatchObject({
+    expect(config.aggregateEvents.delete).toMatchObject({
       eventType: 'DELETED',
       operation: 'delete',
     });
-    expect(config.aggregateCommands.delete.payloadSchema?.parse(undefined)).toBe(undefined);
+    expect(config.aggregateEvents.delete.payloadSchema?.parse(undefined)).toBe(undefined);
   });
 
-  it('throws error if trying to overwrite command definitions', () => {
-    // Given commands are already defined via the schema
+  it('throws error if trying to overwrite event definitions', () => {
+    // Given events are already defined via the schema
     const base1 = ctx
       .aggregate('PROFILE')
-      .schema(z.object({ name: z.string().min(2) }), { createDefaultCommands: true });
-    // When trying to define commands
+      .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true });
+    // When trying to define events
     expect(
-      () => base1.commands((command) => ({ delete: command('DELETED', 'delete') }))
+      () => base1.events((event) => ({ delete: event('DELETED', 'delete') }))
       // Then an error should be thrown
-    ).toThrowError('Commands already set');
-    // Given commands are already defined via the commands function
+    ).toThrowError('Events already set');
+    // Given events are already defined via the events function
     const base2 = ctx
       .aggregate('PROFILE')
-      .commands((command) => ({ delete: command('DELETED', 'delete') }));
-    // When trying to define commands via the schema
+      .events((event) => ({ delete: event('DELETED', 'delete') }));
+    // When trying to define events via the schema
     expect(
-      () => base2.schema(z.object({ name: z.string().min(2) }), { createDefaultCommands: true })
+      () => base2.schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true })
       // Then an error should be thrown
-    ).toThrowError('Commands already set');
+    ).toThrowError('Events already set');
   });
 
   it('throws error if trying to overwrite schema definition', () => {

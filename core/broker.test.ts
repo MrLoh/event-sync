@@ -37,7 +37,7 @@ describe('create broker', () => {
     });
     const store = broker
       .aggregate('PROFILE')
-      .schema(z.object({ name: z.string().min(2) }), { createDefaultCommands: true })
+      .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true })
       .repository(aggregateRepository)
       .register();
     return {
@@ -59,11 +59,11 @@ describe('create broker', () => {
     // When an aggregate config is defined
     const { config } = broker
       .aggregate('PROFILE')
-      .schema(z.object({ name: z.string() }), { createDefaultCommands: true });
+      .schema(z.object({ name: z.string() }), { createDefaultEvents: true });
     // Then is has the correct create id function
     expect(config.createId).toBe(createId);
     // And it has the correct default policy
-    expect(config.aggregateCommands.create.authPolicy).toBe(defaultPolicy);
+    expect(config.aggregateEvents.create.authPolicy).toBe(defaultPolicy);
   });
 
   it('can act as context to create aggregate store', async () => {
@@ -82,7 +82,7 @@ describe('create broker', () => {
     // When an aggregate store is created
     const { config } = broker
       .aggregate('PROFILE')
-      .schema(z.object({ name: z.string().min(2) }), { createDefaultCommands: true });
+      .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true });
     const store = broker.register(config);
     // Then it uses the correct auth adapter
     const id = await store.create({ name: 'test' });
