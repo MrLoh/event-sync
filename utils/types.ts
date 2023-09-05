@@ -138,13 +138,10 @@ export type AggregateRepository<S> = {
   deleteAll: () => Promise<void>;
 };
 
-export type Policy<
-  U extends AccountInterface,
-  A extends string,
-  O extends Operation,
-  T extends string,
-  P
-> = (account: U | null, event: AggregateEvent<A, O, `${A}_${T}`, P>) => boolean;
+export type Policy<U extends AccountInterface, P> = (
+  account: U | null,
+  event: AggregateEvent<string, Operation, string, P>
+) => boolean;
 
 export type AggregateEventConfig<
   U extends AccountInterface,
@@ -154,12 +151,14 @@ export type AggregateEventConfig<
   S extends BaseState,
   P
 > = {
+  /** The type of the aggregate */
+  aggregateType: A;
   /** The type of the event */
   eventType: T;
   /** The operation the command performs */
   operation: O;
   /** The policy that determines if the account is authorized to execute the command */
-  authPolicy: Policy<U, A, O, T, P>;
+  authPolicy: Policy<U, P>;
   /** The schema of the payload */
   payloadSchema?: ZodSchema<P>;
 } & (O extends 'create'
@@ -215,9 +214,12 @@ export type AggregateConfig<
   aggregateSchema?: ZodSchema<Omit<S, keyof BaseState>>;
   /** The repository for persisting the aggregates state in */
   aggregateRepository?: AggregateRepository<S>;
-
+  /** The configuration for aggregate events */
   aggregateEvents: C;
+  /** Function to generate unique IDs */
   createId?: () => string;
+  /** Whether to use constant casing for event and aggregate type strings */
+  useConstantCase?: boolean;
 };
 
 export type EventServerAdapter = {

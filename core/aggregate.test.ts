@@ -14,16 +14,16 @@ describe('create aggregate config', () => {
 
   it('should generate aggregate config with type', () => {
     // When a new config is constructed with a type
-    const { config } = ctx.aggregate('PROFILE');
+    const { config } = ctx.aggregate('profile');
     // Then the config should have the correct type
-    expect(config.aggregateType).toBe('PROFILE');
+    expect(config.aggregateType).toBe('profile');
   });
 
   it('should generate aggregate config with schema', () => {
     // Given a schema
     const profileSchema = z.object({ name: z.string().min(2) });
     // When a new config is constructed with a schema
-    const { config } = ctx.aggregate('PROFILE').schema(profileSchema);
+    const { config } = ctx.aggregate('profile').schema(profileSchema);
     // Then the config should have the correct schema
     expect(config.aggregateSchema).toBe(profileSchema);
   });
@@ -33,7 +33,7 @@ describe('create aggregate config', () => {
     const profilesRepository = createFakeAggregateRepository<{ name: string } & BaseState>();
     // When a new config is constructed with a repository
     const { config } = ctx
-      .aggregate('PROFILE')
+      .aggregate('profile')
       .schema(z.object({ name: z.string().min(2) }))
       .repository(profilesRepository);
     // Then the config should have the correct repository
@@ -49,15 +49,15 @@ describe('create aggregate config', () => {
     const constructor = (payload: { name: string }) => payload;
     // When a new config is constructed with events
     const { config } = ctx
-      .aggregate('PROFILE')
+      .aggregate('profile')
       .schema(profileSchema)
       .events((event) => ({
-        create: event('CREATED', 'create').payload(profileSchema).constructor(constructor),
+        create: event('create').payload(profileSchema).constructor(constructor),
       }));
     // Then the config should have the correct events
     expect(Object.keys(config.aggregateEvents ?? {})).toEqual(['create']);
     expect(config.aggregateEvents.create).toMatchObject({
-      eventType: 'CREATED',
+      eventType: 'profile.create',
       operation: 'create',
       payloadSchema: profileSchema,
       construct: constructor,
@@ -66,33 +66,47 @@ describe('create aggregate config', () => {
 
   it('should throw error if event action is not defined', () => {
     // Given a base aggregate config definition
-    const baseConfig = () => ctx.aggregate('PROFILE').schema(z.object({ name: z.string().min(2) }));
+    const baseConfig = () => ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // When trying to define a create event without a constructor
     expect(
-      () => baseConfig().events((event) => ({ create: event('CREATED', 'create') }))
+      () => baseConfig().events((event) => ({ create: event('create') }))
       // Then an error should be thrown
     ).toThrowError('missing constructor definition');
     // When trying to define an update event without a reducer
     expect(
-      () => baseConfig().events((event) => ({ create: event('UPDATED', 'update') }))
+      () => baseConfig().events((event) => ({ update: event('update') }))
       // Then an error should be thrown
     ).toThrowError('missing reducer definition');
     // When trying to define a delete event without a destructor
     expect(
-      () => baseConfig().events((event) => ({ create: event('DELETED', 'delete') }))
+      () => baseConfig().events((event) => ({ delete: event('delete') }))
       // Then no error should be thrown
     ).not.toThrowError('missing destructor definition');
+  });
+
+  it('can overwrite default event type', () => {
+    // Given a base aggregate config definition
+    const baseConfig = () => ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
+    // When defining a create event with a custom event type
+    const { config } = baseConfig().events((event) => ({
+      create: event('create')
+        .type('profile.created')
+        .payload(z.object({ name: z.string().min(2) }))
+        .constructor((state) => state),
+    }));
+    // Then the event type should be set correctly
+    expect(config.aggregateEvents.create.eventType).toBe('profile.created');
   });
 
   it('can define specific policy for event', () => {
     // Given an aggregate with a default policy
     const base = ctx
-      .aggregate('PROFILE', { defaultPolicy: () => false })
+      .aggregate('profile', { defaultPolicy: () => false })
       .schema(z.object({ name: z.string().min(2) }));
     // When defining a event with a policy
     const eventPolicy = jest.fn(() => true);
     const { config } = base.events((event) => ({
-      update: event('UPDATED', 'update')
+      update: event('update')
         .payload(z.object({ name: z.string().min(2) }))
         .policy(eventPolicy)
         .reducer((state, payload) => ({ ...state, ...payload })),
@@ -107,11 +121,11 @@ describe('create aggregate config', () => {
     // Given a default policy is defined on the aggregate
     const aggregatePolicy = jest.fn(() => true);
     const base = ctx
-      .aggregate('PROFILE', { defaultPolicy: aggregatePolicy })
+      .aggregate('profile', { defaultPolicy: aggregatePolicy })
       .schema(z.object({ name: z.string().min(2) }));
     // When the event policy is not defined
     const { config } = base.events((event) => ({
-      delete: event('DELETED', 'delete')
+      delete: event('delete')
         .payload(z.object({ name: z.string().min(2) }))
         .destructor(() => {}),
     }));
@@ -126,10 +140,10 @@ describe('create aggregate config', () => {
     const ctx = createAggregateContext<Account>({ createId, defaultPolicy: contextPolicy });
     // When the aggregate and event policy is not defined
     const { config } = ctx
-      .aggregate('PROFILE')
+      .aggregate('profile')
       .schema(z.object({ name: z.string().min(2) }))
       .events((event) => ({
-        create: event('CREATED', 'create')
+        create: event('create')
           .payload(z.object({ name: z.string().min(2) }))
           .constructor((state) => state),
       }));
@@ -142,12 +156,12 @@ describe('create aggregate config', () => {
   it('throw error if no policy is defined', () => {
     // Given no default policy is defined on the context or the aggregate
     const ctx = createAggregateContext<Account>({ createId });
-    const base = ctx.aggregate('PROFILE').schema(z.object({ name: z.string().min(2) }));
+    const base = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // When trying to define a event without a policy
     expect(
       () =>
         base.events((event) => ({
-          create: event('CREATED', 'create')
+          create: event('create')
             .payload(z.object({ name: z.string().min(2) }))
             .constructor((state) => state),
         }))
@@ -160,7 +174,7 @@ describe('create aggregate config', () => {
     const createId = jest.fn(() => 'test');
     const ctx = createAggregateContext<Account>({ createId });
     // When the aggregate is defined without a create id function
-    const { config } = ctx.aggregate('PROFILE').schema(z.object({ name: z.string().min(2) }));
+    const { config } = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // Then the context create id function should be used
     expect(config.createId).toBe(createId);
     config.createId?.();
@@ -171,7 +185,7 @@ describe('create aggregate config', () => {
     // Given a create id function is defined on the aggregate
     const createId = jest.fn(() => 'test');
     const { config } = ctx
-      .aggregate('PROFILE', { createId })
+      .aggregate('profile', { createId })
       .schema(z.object({ name: z.string().min(2) }));
     // Then the aggregate create id function should be used
     expect(config.createId).toBe(createId);
@@ -184,12 +198,12 @@ describe('create aggregate config', () => {
     const profileSchema = z.object({ name: z.string().min(2) });
     // When a new config is constructed with a schema and the setDefaultEvents option
     const { config } = ctx
-      .aggregate('PROFILE')
+      .aggregate('profile')
       .schema(profileSchema, { createDefaultEvents: true });
     // Then the config should have default events defined
     expect(Object.keys(config.aggregateEvents ?? {})).toEqual(['create', 'update', 'delete']);
     expect(config.aggregateEvents.create).toMatchObject({
-      eventType: 'CREATED',
+      eventType: 'profile.create',
       operation: 'create',
       payloadSchema: profileSchema,
     });
@@ -197,7 +211,7 @@ describe('create aggregate config', () => {
       name: 'tester',
     });
     expect(config.aggregateEvents.update).toMatchObject({
-      eventType: 'UPDATED',
+      eventType: 'profile.update',
       operation: 'update',
     });
     expect(config.aggregateEvents.update.payloadSchema?.parse({})).toEqual({});
@@ -207,7 +221,7 @@ describe('create aggregate config', () => {
       })
     ).toMatchObject({ name: 'tester 2' });
     expect(config.aggregateEvents.delete).toMatchObject({
-      eventType: 'DELETED',
+      eventType: 'profile.delete',
       operation: 'delete',
     });
     expect(config.aggregateEvents.delete.payloadSchema?.parse(undefined)).toBe(undefined);
@@ -216,17 +230,15 @@ describe('create aggregate config', () => {
   it('throws error if trying to overwrite event definitions', () => {
     // Given events are already defined via the schema
     const base1 = ctx
-      .aggregate('PROFILE')
+      .aggregate('profile')
       .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true });
     // When trying to define events
     expect(
-      () => base1.events((event) => ({ delete: event('DELETED', 'delete') }))
+      () => base1.events((event) => ({ delete: event('delete') }))
       // Then an error should be thrown
     ).toThrowError('Events already set');
     // Given events are already defined via the events function
-    const base2 = ctx
-      .aggregate('PROFILE')
-      .events((event) => ({ delete: event('DELETED', 'delete') }));
+    const base2 = ctx.aggregate('profile').events((event) => ({ delete: event('delete') }));
     // When trying to define events via the schema
     expect(
       () => base2.schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true })
@@ -236,7 +248,7 @@ describe('create aggregate config', () => {
 
   it('throws error if trying to overwrite schema definition', () => {
     // Given a schema is already defined
-    const base = ctx.aggregate('PROFILE').schema(z.object({ name: z.string().min(2) }));
+    const base = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // When trying to overwrite the schema
     expect(
       () => base.schema(z.object({ name: z.string().min(2) }))
@@ -246,7 +258,7 @@ describe('create aggregate config', () => {
 
   it('throws error if trying to overwrite repository definition', () => {
     // Given a repository is already defined
-    const base = ctx.aggregate('PROFILE').repository(createFakeAggregateRepository<BaseState>());
+    const base = ctx.aggregate('profile').repository(createFakeAggregateRepository<BaseState>());
     // When trying to overwrite the repository
     expect(
       () => base.repository(createFakeAggregateRepository<BaseState>())
@@ -258,10 +270,54 @@ describe('create aggregate config', () => {
     // Given a register function
     const register = jest.fn();
     // When a new config is constructed with a register function
-    const base = ctx.aggregate('PROFILE', { register });
+    const base = ctx.aggregate('profile', { register });
     // And the register function is called on the builder
     base.register();
     // Then the register function should be called with the config
-    expect(register).toHaveBeenCalledWith(expect.objectContaining({ aggregateType: 'PROFILE' }));
+    expect(register).toHaveBeenCalledWith(expect.objectContaining({ aggregateType: 'profile' }));
+  });
+
+  it('can be configured to convert types to constant case', () => {
+    // Given a context with the `useConstantCase` option
+    const ctx = createAggregateContext<Account, true>({
+      createId,
+      defaultPolicy: () => true,
+      useConstantCase: true,
+    });
+    // When a new config is constructed with some events
+    const { config } = ctx
+      .aggregate('profileTest')
+      .schema(z.object({ name: z.string().min(2) }))
+      .events((event) => ({
+        createThis: event('create')
+          .payload(z.string())
+          .constructor((name) => ({ name })),
+        delete: event('delete').type('deleted'),
+      }));
+    // Then the aggregate type should have the correct type
+    expect(config.aggregateType).toBe('PROFILE_TEST');
+    // And default event types should be converted to constant case
+    expect(config.aggregateEvents.createThis.eventType).toBe('PROFILE_TEST_CREATE_THIS');
+    // But custom event types should not be converted to constant case
+    expect(config.aggregateEvents.delete.eventType).toBe('deleted');
+  });
+
+  it('respects constant case setting for default events', () => {
+    // Given a context with the `useConstantCase` option
+    const ctx = createAggregateContext<Account, true>({
+      createId,
+      defaultPolicy: () => true,
+      useConstantCase: true,
+    });
+    // When a new config is constructed with a schema and the setDefaultEvents option
+    const { config } = ctx
+      .aggregate('profileTest')
+      .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true });
+    // Then the config should have default events defined
+    expect(Object.keys(config.aggregateEvents ?? {})).toEqual(['create', 'update', 'delete']);
+    // And event types should be in constant case
+    expect(config.aggregateEvents.create.eventType).toBe('PROFILE_TEST_CREATED');
+    expect(config.aggregateEvents.update.eventType).toBe('PROFILE_TEST_UPDATED');
+    expect(config.aggregateEvents.delete.eventType).toBe('PROFILE_TEST_DELETED');
   });
 });

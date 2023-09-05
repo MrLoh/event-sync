@@ -34,7 +34,8 @@ describe('create store', () => {
         aggregateSchema: profileSchema,
         aggregateEvents: {
           create: {
-            eventType: 'CREATED',
+            aggregateType: 'PROFILE',
+            eventType: 'PROFILE_CREATED',
             operation: 'create' as const,
             payloadSchema: profileSchema,
             authPolicy:
@@ -43,7 +44,8 @@ describe('create store', () => {
             construct: ({ name }: Profile) => ({ name }),
           },
           update: {
-            eventType: 'UPDATED',
+            aggregateType: 'PROFILE',
+            eventType: 'PROFILE_UPDATED',
             operation: 'update' as const,
             payloadSchema: profileSchema.partial(),
             authPolicy:
@@ -52,7 +54,8 @@ describe('create store', () => {
             reduce: (state: Profile, payload: Partial<Profile>) => ({ ...state, ...payload }),
           },
           delete: {
-            eventType: 'DELETED',
+            aggregateType: 'PROFILE',
+            eventType: 'PROFILE_DELETED',
             operation: 'delete' as const,
             payloadSchema: z.undefined(),
             authPolicy:

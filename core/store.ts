@@ -146,7 +146,7 @@ export const createStore = <
     const eventByEventType = Object.values(agg.aggregateEvents).reduce(
       (acc, eventConfig) => ({
         ...acc,
-        [`${agg.aggregateType}_${eventConfig.eventType}`]: eventConfig,
+        [eventConfig.eventType]: eventConfig,
       }),
       {} as { [eventType: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
     );
@@ -229,14 +229,16 @@ export const createStore = <
   const dispatchers = mapObject(agg.aggregateEvents, (eventConfig) => {
     const dispatch = async (aggregateId: string, payload: any, lastEventId?: string) => {
       // generate event
-      const type = `${agg.aggregateType}_${eventConfig.eventType}` as const;
       if (payload) {
         payload = ensureEncodingSafety(payload);
       }
       if (eventConfig.payloadSchema) {
         const res = eventConfig.payloadSchema.safeParse(payload);
         if (!res.success) {
-          throw new InvalidInputError(`Invalid payload for event ${type}`, res.error);
+          throw new InvalidInputError(
+            `Invalid payload for event ${eventConfig.eventType}`,
+            res.error
+          );
         }
         payload = res.data;
       }
@@ -247,7 +249,7 @@ export const createStore = <
         operation: eventConfig.operation,
         aggregateType: agg.aggregateType,
         aggregateId,
-        type,
+        type: eventConfig.eventType,
         payload,
         createdBy: account?.id,
         createdOn: deviceId,

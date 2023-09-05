@@ -34,6 +34,7 @@ describe('create broker', () => {
       connectionStatusAdapter,
       retrySyncInterval,
       onTermination: overwrites?.onTermination,
+      useConstantCase: true,
     });
     const store = broker
       .aggregate('PROFILE')
@@ -81,7 +82,7 @@ describe('create broker', () => {
     });
     // When an aggregate store is created
     const { config } = broker
-      .aggregate('PROFILE')
+      .aggregate('profile')
       .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true });
     const store = broker.register(config);
     // Then it uses the correct auth adapter
@@ -92,9 +93,9 @@ describe('create broker', () => {
     expect(eventsRepository.insert).toHaveBeenCalled();
     expect(eventsRepository.events).toHaveLength(1);
     expect(eventsRepository.events[0]).toMatchObject({
-      aggregateType: 'PROFILE',
+      aggregateType: 'profile',
       aggregateId: id,
-      type: 'PROFILE_CREATED',
+      type: 'profile.create',
       payload: { name: 'test' },
     });
   });

@@ -17,15 +17,16 @@ import type {
   Operation,
   Policy,
 } from '../utils/types';
+import type { ConstantCase } from '../utils/case-helpers';
 
-export type Broker<U extends AccountInterface> = {
+export type Broker<U extends AccountInterface, C extends boolean> = {
   /** The auth adapter to get device ids and accounts */
   authAdapter: AuthAdapter<U>;
   /** The id generator */
   createId: () => string;
   /** The repository for persisting events */
   eventsRepository?: EventsRepository;
-  /** the main event bus */
+  /** The main event bus */
   eventBus: EventBus;
   /**
    * Register an aggregate config with the broker
@@ -43,18 +44,19 @@ export type Broker<U extends AccountInterface> = {
     agg: AggregateConfig<U, A, S, C>
   ) => AggregateStore<U, A, S, C>;
   /**
+   * Create an aggregate with the broker as a context
    *
-   * @param aggregateType
-   * @param options
-   * @returns
+   * @param aggregateType the name of the aggregate
+   * @param options optional options for the aggregate
+   * @returns an aggregate config builder with a register function
    */
   aggregate: <A extends string>(
     aggregateType: A,
     options?: {
       createId?: () => string;
-      defaultPolicy?: Policy<U, A, Operation, string, unknown>;
+      defaultPolicy?: Policy<U, unknown>;
     }
-  ) => AggregateConfigBuilder<U, A, BaseState, {}, true>;
+  ) => AggregateConfigBuilder<U, C extends true ? ConstantCase<A> : A, BaseState, {}, true, C>;
   /**
    * Syncs events that failed to record. This should be called after login since events are only
    * synced if the account adapter returns an account.
@@ -90,7 +92,7 @@ const connectionStatusObservable = (connectionStatusAdapter?: ConnectionStatusAd
   return connected$;
 };
 
-export const createBroker = <U extends AccountInterface>({
+export const createBroker = <U extends AccountInterface, C extends boolean = false>({
   authAdapter,
   createId,
   defaultPolicy,
@@ -99,16 +101,19 @@ export const createBroker = <U extends AccountInterface>({
   connectionStatusAdapter,
   retrySyncInterval = 5 * 60 * 1000,
   onTermination,
+  useConstantCase,
 }: {
   authAdapter: AuthAdapter<U>;
   createId: () => string;
-  defaultPolicy?: Policy<U, string, Operation, string, unknown>;
+  defaultPolicy?: Policy<U, unknown>;
   eventsRepository?: EventsRepository;
   eventServerAdapter?: EventServerAdapter;
   connectionStatusAdapter?: ConnectionStatusAdapter;
   retrySyncInterval?: number;
   onTermination?: (error?: Error) => void;
-}): Broker<U> => {
+  /** Whether to use constant case for aggregate and event types */
+  useConstantCase?: C;
+}): Broker<U, C> => {
   // create event bus
   const eventBus = createEventBus();
   if (onTermination) eventBus.onTermination(onTermination);
@@ -191,12 +196,12 @@ export const createBroker = <U extends AccountInterface>({
     return store;
   };
 
-  const aggBuilderCtx = createAggregateContext<U>({ createId, defaultPolicy });
+  const aggBuilderCtx = createAggregateContext<U, C>({ createId, defaultPolicy, useConstantCase });
   const aggregate = <A extends string>(
     aggregateType: A,
     options?: {
       createId?: () => string;
-      defaultPolicy?: Policy<U, A, Operation, string, unknown>;
+      defaultPolicy?: Policy<U, unknown>;
     }
   ) => aggBuilderCtx.aggregate(aggregateType, { ...options, register });
 
