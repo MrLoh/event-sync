@@ -154,10 +154,10 @@ export const createStore = <
     // TODO: add support for transactional commits
     const persistEventAndAggregate = async (state: S) => {
       try {
-        if (ctx.eventsRepository) await ctx.eventsRepository.insert(event);
+        if (ctx.eventsRepository) await ctx.eventsRepository.create(event);
         if (agg.aggregateRepository) {
           if (event.operation === 'create') {
-            await agg.aggregateRepository.insert(event.aggregateId, state);
+            await agg.aggregateRepository.create(state);
           } else if (event.operation === 'update') {
             return await agg.aggregateRepository.update(event.aggregateId, state);
           } else if (event.operation === 'delete') {

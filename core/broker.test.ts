@@ -73,7 +73,7 @@ describe('create broker', () => {
     jest.spyOn(authAdapter, 'getAccount');
     jest.spyOn(authAdapter, 'getDeviceId');
     const eventsRepository = createFakeEventsRepository();
-    jest.spyOn(eventsRepository, 'insert');
+    jest.spyOn(eventsRepository, 'create');
     const broker = createBroker({
       createId,
       defaultPolicy: () => true,
@@ -90,7 +90,7 @@ describe('create broker', () => {
     expect(authAdapter.getAccount).toHaveBeenCalled();
     expect(authAdapter.getDeviceId).toHaveBeenCalled();
     // And it uses the correct event repository
-    expect(eventsRepository.insert).toHaveBeenCalled();
+    expect(eventsRepository.create).toHaveBeenCalled();
     expect(eventsRepository.events).toHaveLength(1);
     expect(eventsRepository.events[0]).toMatchObject({
       aggregateType: 'profile',

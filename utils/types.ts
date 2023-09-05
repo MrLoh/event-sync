@@ -31,11 +31,11 @@ export type AnyAggregateEvent = AggregateEvent<string, Operation, string, any>;
 
 export type EventsRepository = {
   /**
-   * Insert a new event into the repository
+   * Create a new event in the repository
    *
-   * @param event the event to insert
+   * @param event the event to create
    */
-  insert: (event: AnyAggregateEvent) => Promise<void>;
+  create: (event: AnyAggregateEvent) => Promise<void>;
   /**
    * Delete all events from the repository
    */
@@ -98,7 +98,7 @@ export type BaseState = {
   lastRecordedAt?: Date;
 };
 
-export type AggregateRepository<S> = {
+export type AggregateRepository<S extends BaseState> = {
   /**
    * Get the state of the aggregate with the given id
    *
@@ -113,12 +113,11 @@ export type AggregateRepository<S> = {
    */
   getAll: () => Promise<{ [id: string]: S }>;
   /**
-   * Insert a new aggregate with the given state and id
+   * Create a new aggregate with the given state and id
    *
-   * @param id the id of the aggregate
    * @param state the state of the aggregate
    */
-  insert: (id: string, state: S) => Promise<void>;
+  create: (state: S) => Promise<void>;
   /**
    * Update the state of the aggregate with the given id
    *

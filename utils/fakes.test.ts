@@ -69,7 +69,7 @@ describe('createFakeEventsRepository', () => {
     // and an event
     const event = createEvent('TEST', 'TEST');
     // When the event is inserted
-    await repository.insert(event);
+    await repository.create(event);
     // Then the event is saved to the repository
     expect(repository.events).toContain(event);
   });
@@ -78,9 +78,9 @@ describe('createFakeEventsRepository', () => {
     // Given a repository with an event
     const repository = createFakeEventsRepository();
     const event = createEvent('TEST', 'TEST');
-    await repository.insert(event);
+    await repository.create(event);
     // When the event is inserted again
-    await expect(repository.insert(event)).rejects.toThrow(
+    await expect(repository.create(event)).rejects.toThrow(
       // Then an error is thrown
       `Event ${event.id} already exists`
     );
@@ -91,8 +91,8 @@ describe('createFakeEventsRepository', () => {
     const repository = createFakeEventsRepository();
     const event1 = createEvent('TEST', 'TEST');
     const event2 = createEvent('TEST', 'TEST');
-    await repository.insert(event1);
-    await repository.insert(event2);
+    await repository.create(event1);
+    await repository.create(event2);
     expect(repository.events).toHaveLength(2);
     // When the events are deleted
     await repository.deleteAll();
@@ -104,7 +104,7 @@ describe('createFakeEventsRepository', () => {
     // Given a repository with an event
     const repository = createFakeEventsRepository();
     const event = createEvent('TEST', 'TEST');
-    await repository.insert(event);
+    await repository.create(event);
     // When the event is marked as recorded
     const recordedAt = new Date();
     const accountId = createId();
@@ -130,9 +130,9 @@ describe('createFakeEventsRepository', () => {
     const event1 = createEvent('TEST', 'TEST', { recordedAt: new Date() });
     const event2 = createEvent('TEST', 'TEST');
     const event3 = createEvent('TEST', 'TEST');
-    await repository.insert(event1);
-    await repository.insert(event2);
-    await repository.insert(event3);
+    await repository.create(event1);
+    await repository.create(event2);
+    await repository.create(event3);
     // When getting all unrecorded events
     const unrecordedEvents = await repository.getUnrecorded();
     // Then only the unrecorded events are returned
@@ -147,7 +147,7 @@ describe('createFakeEventsRepository', () => {
     const event1 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-28') });
     const event2 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-29') });
     const event3 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-30') });
-    await Promise.all([event2, event3, event1].map(repository.insert));
+    await Promise.all([event2, event3, event1].map(repository.create));
     // When getting the last recorded event
     const lastRecordedEvent = await repository.getLastRecordedEvent();
     // Then the last recorded event is returned
@@ -158,7 +158,7 @@ describe('createFakeEventsRepository', () => {
     // Given a repository with only unrecorded events
     const repository = createFakeEventsRepository();
     const event = createEvent('TEST', 'TEST');
-    await repository.insert(event);
+    await repository.create(event);
     // When getting the last recorded event
     const lastRecordedEvent = await repository.getLastRecordedEvent();
     // Then null is returned
@@ -269,11 +269,11 @@ describe('createFakeAggregateRepository', () => {
     // And two aggregates
     const aggregate1 = createAggregateObject({ id: createId(), name: 'Test Aggregate 1' });
     const aggregate2 = createAggregateObject({ id: createId(), name: 'Test Aggregate 2' });
-    await repository.insert(aggregate1.id, aggregate1);
-    await repository.insert(aggregate2.id, aggregate2);
+    await repository.create(aggregate1);
+    await repository.create(aggregate2);
     // When the aggregates are inserted
-    await repository.insert(aggregate1.id, aggregate1);
-    await repository.insert(aggregate2.id, aggregate2);
+    await repository.create(aggregate1);
+    await repository.create(aggregate2);
     // Then the aggregates can be retrieved again from the repository
     expect(await repository.getAll()).toEqual({
       [aggregate1.id]: aggregate1,
@@ -288,7 +288,7 @@ describe('createFakeAggregateRepository', () => {
     // Given a repository with an aggregate
     const repository = createFakeAggregateRepository<{ name: string } & BaseState>();
     const aggregate = createAggregateObject({ id: createId(), name: 'Test Aggregate' });
-    await repository.insert(aggregate.id, aggregate);
+    await repository.create(aggregate);
     // When the aggregate is updated
     const updatedAggregate = { ...aggregate, name: 'Updated Aggregate' };
     await repository.update(updatedAggregate.id, updatedAggregate);
@@ -301,8 +301,8 @@ describe('createFakeAggregateRepository', () => {
     const repository = createFakeAggregateRepository<{ name: string } & BaseState>();
     const aggregate1 = createAggregateObject({ id: createId(), name: 'Test Aggregate 1' });
     const aggregate2 = createAggregateObject({ id: createId(), name: 'Test Aggregate 2' });
-    await repository.insert(aggregate1.id, aggregate1);
-    await repository.insert(aggregate2.id, aggregate2);
+    await repository.create(aggregate1);
+    await repository.create(aggregate2);
     // When an aggregate is deleted
     await repository.delete(aggregate1.id);
     // Then the deleted aggregate is no longer in the repository
@@ -316,8 +316,8 @@ describe('createFakeAggregateRepository', () => {
     const repository = createFakeAggregateRepository<{ name: string } & BaseState>();
     const aggregate1 = createAggregateObject({ id: createId(), name: 'Test Aggregate 1' });
     const aggregate2 = createAggregateObject({ id: createId(), name: 'Test Aggregate 2' });
-    await repository.insert(aggregate1.id, aggregate1);
-    await repository.insert(aggregate2.id, aggregate2);
+    await repository.create(aggregate1);
+    await repository.create(aggregate2);
     // When all aggregates are deleted
     await repository.deleteAll();
     // Then the repository is empty

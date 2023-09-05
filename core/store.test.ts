@@ -249,7 +249,7 @@ describe('create store', () => {
   it('starts up with state persisted to repository', async () => {
     // Given a repository with an existing profile
     const aggregateRepository = createFakeAggregateRepository<Profile & BaseState>();
-    await aggregateRepository.insert('p1', createAggregateObject({ id: 'p1', name: 'tester' }));
+    await aggregateRepository.create(createAggregateObject({ id: 'p1', name: 'tester' }));
     // When a new store is created with the repository and initialized
     const { store } = setup({ aggregateRepository });
     await store.initialize();
@@ -288,7 +288,7 @@ describe('create store', () => {
     const { store, context, aggregateRepository } = setup();
     const oldProfileId = await store.create({ name: 'tester' });
     // Given the event repository throws an error on insert
-    jest.spyOn(context.eventsRepository, 'insert').mockImplementationOnce(async () => {
+    jest.spyOn(context.eventsRepository, 'create').mockImplementationOnce(async () => {
       throw new Error('insert failed');
     });
     // And a subscriber to the store

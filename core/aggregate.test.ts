@@ -38,7 +38,7 @@ describe('create aggregate config', () => {
       .repository(profilesRepository);
     // Then the config should have the correct repository
     expect(config.aggregateRepository).toBe(profilesRepository);
-    config.aggregateRepository?.insert('p1', createAggregateObject({ id: 'p1', name: 'tester' }));
+    config.aggregateRepository?.create(createAggregateObject({ id: 'p1', name: 'tester' }));
     expect(await profilesRepository.getOne('p1')).toMatchObject({ name: 'tester', version: 1 });
   });
 

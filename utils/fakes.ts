@@ -52,7 +52,7 @@ export const createFakeEventsRepository = (): EventsRepository & {
     get events() {
       return events;
     },
-    insert: async (event: AnyAggregateEvent) => {
+    create: async (event: AnyAggregateEvent) => {
       if (events.find((e) => e.id === event.id)) {
         throw new Error(`Event ${event.id} already exists`);
       }
@@ -132,8 +132,8 @@ export const createFakeAggregateRepository = <S extends BaseState>(): AggregateR
   return {
     getOne: async (id: string) => storage[id],
     getAll: async () => storage,
-    insert: async (id: string, state: S) => {
-      storage[id] = state;
+    create: async (state: S) => {
+      storage[state.id] = state;
     },
     update: async (id: string, state: S) => {
       storage[id] = state;
