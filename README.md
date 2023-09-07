@@ -1,4 +1,5 @@
 # Event Sync
+![license: MIT](https://badgen.net/github/license/MrLoh/event-sync)
 
 This is still a work in progress, the first version will be released soon.
 
