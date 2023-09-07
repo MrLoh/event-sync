@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { createAggregateContext } from './aggregate';
+import { createContext } from './aggregate';
 import {
   createId,
   type Account,
@@ -10,7 +10,7 @@ import {
 import type { BaseState } from '../utils/types';
 
 describe('create aggregate config', () => {
-  const ctx = createAggregateContext<Account>({ createId, defaultPolicy: () => true });
+  const ctx = createContext<Account>({ createId, defaultPolicy: () => true });
 
   it('should generate aggregate config with type', () => {
     // When a new config is constructed with a type
@@ -137,7 +137,7 @@ describe('create aggregate config', () => {
   it('can define default policy on context', () => {
     // Given a default policy is defined on the context
     const contextPolicy = jest.fn(() => true);
-    const ctx = createAggregateContext<Account>({ createId, defaultPolicy: contextPolicy });
+    const ctx = createContext<Account>({ createId, defaultPolicy: contextPolicy });
     // When the aggregate and event policy is not defined
     const { config } = ctx
       .aggregate('profile')
@@ -155,7 +155,7 @@ describe('create aggregate config', () => {
 
   it('throw error if no policy is defined', () => {
     // Given no default policy is defined on the context or the aggregate
-    const ctx = createAggregateContext<Account>({ createId });
+    const ctx = createContext<Account>({ createId });
     const base = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // When trying to define a event without a policy
     expect(
@@ -172,7 +172,7 @@ describe('create aggregate config', () => {
   it('can define create id on context', () => {
     // Given a create id function is defined on the context
     const createId = jest.fn(() => 'test');
-    const ctx = createAggregateContext<Account>({ createId });
+    const ctx = createContext<Account>({ createId });
     // When the aggregate is defined without a create id function
     const { config } = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // Then the context create id function should be used

@@ -2,7 +2,7 @@ import { BehaviorSubject, filter, interval, throttleTime, merge } from 'rxjs';
 import { tryCatch } from '../utils/result';
 import { type EventBus, createEventBus } from './event-bus';
 import { type AggregateStore, createStore } from './store';
-import { createAggregateContext, type AggregateConfigBuilder } from './aggregate';
+import { createContext, type AggregateConfigBuilder } from './aggregate';
 
 import type {
   AccountInterface,
@@ -192,7 +192,7 @@ export const createBroker = <U extends AccountInterface>({
     return store;
   };
 
-  const aggBuilderCtx = createAggregateContext<U>({ createId, defaultPolicy });
+  const aggBuilderCtx = createContext<U>({ createId, defaultPolicy });
   const aggregate = <A extends string>(
     aggregateType: A,
     options?: {

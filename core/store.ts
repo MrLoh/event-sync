@@ -88,7 +88,7 @@ export const baseStateSchema = z.object({
 }) satisfies ZodSchema<BaseState>;
 
 /** will JSON stringify and parse to for example remove undefined values */
-const ensureEncodingSafety = <O extends Record<string, any>>(obj: O): O => {
+export const ensureEncodingSafety = <O extends Record<string, any>>(obj: O): O => {
   return JSON.parse(JSON.stringify(obj));
 };
 

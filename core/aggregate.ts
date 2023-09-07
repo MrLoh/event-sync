@@ -94,7 +94,7 @@ type AggregateEventConfigBuilder<
        * @returns the event builder for chaining
        */
       reducer: (
-        reduce: (payload: P, state: S) => Omit<S, keyof BaseState>
+        reduce: (state: S, payload: P) => Omit<S, keyof BaseState>
       ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
     }
   : O extends 'delete'
@@ -218,7 +218,7 @@ export type AggregateConfigBuilder<
  * @param ctx the context
  * @returns the aggregate builder context
  */
-export const createAggregateContext = <U extends AccountInterface>(ctx: {
+export const createContext = <U extends AccountInterface>(ctx: {
   createId?: () => string;
   defaultPolicy?: Policy<U, unknown>;
 }): {
