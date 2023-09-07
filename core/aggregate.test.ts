@@ -276,48 +276,4 @@ describe('create aggregate config', () => {
     // Then the register function should be called with the config
     expect(register).toHaveBeenCalledWith(expect.objectContaining({ aggregateType: 'profile' }));
   });
-
-  it('can be configured to convert types to constant case', () => {
-    // Given a context with the `useConstantCase` option
-    const ctx = createAggregateContext<Account, true>({
-      createId,
-      defaultPolicy: () => true,
-      useConstantCase: true,
-    });
-    // When a new config is constructed with some events
-    const { config } = ctx
-      .aggregate('profileTest')
-      .schema(z.object({ name: z.string().min(2) }))
-      .events((event) => ({
-        createThis: event('create')
-          .payload(z.string())
-          .constructor((name) => ({ name })),
-        delete: event('delete').type('deleted'),
-      }));
-    // Then the aggregate type should have the correct type
-    expect(config.aggregateType).toBe('PROFILE_TEST');
-    // And default event types should be converted to constant case
-    expect(config.aggregateEvents.createThis.eventType).toBe('PROFILE_TEST_CREATE_THIS');
-    // But custom event types should not be converted to constant case
-    expect(config.aggregateEvents.delete.eventType).toBe('deleted');
-  });
-
-  it('respects constant case setting for default events', () => {
-    // Given a context with the `useConstantCase` option
-    const ctx = createAggregateContext<Account, true>({
-      createId,
-      defaultPolicy: () => true,
-      useConstantCase: true,
-    });
-    // When a new config is constructed with a schema and the setDefaultEvents option
-    const { config } = ctx
-      .aggregate('profileTest')
-      .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true });
-    // Then the config should have default events defined
-    expect(Object.keys(config.aggregateEvents ?? {})).toEqual(['create', 'update', 'delete']);
-    // And event types should be in constant case
-    expect(config.aggregateEvents.create.eventType).toBe('PROFILE_TEST_CREATED');
-    expect(config.aggregateEvents.update.eventType).toBe('PROFILE_TEST_UPDATED');
-    expect(config.aggregateEvents.delete.eventType).toBe('PROFILE_TEST_DELETED');
-  });
 });

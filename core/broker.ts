@@ -17,9 +17,8 @@ import type {
   Operation,
   Policy,
 } from '../utils/types';
-import type { ConstantCase } from '../utils/case-helpers';
 
-export type Broker<U extends AccountInterface, C extends boolean> = {
+export type Broker<U extends AccountInterface> = {
   /** The auth adapter to get device ids and accounts */
   authAdapter: AuthAdapter<U>;
   /** The id generator */
@@ -56,7 +55,7 @@ export type Broker<U extends AccountInterface, C extends boolean> = {
       createId?: () => string;
       defaultPolicy?: Policy<U, unknown>;
     }
-  ) => AggregateConfigBuilder<U, C extends true ? ConstantCase<A> : A, BaseState, {}, true, C>;
+  ) => AggregateConfigBuilder<U, A, BaseState, {}, true>;
   /**
    * Syncs events that failed to record. This should be called after login since events are only
    * synced if the account adapter returns an account.
@@ -92,7 +91,7 @@ const connectionStatusObservable = (connectionStatusAdapter?: ConnectionStatusAd
   return connected$;
 };
 
-export const createBroker = <U extends AccountInterface, C extends boolean = false>({
+export const createBroker = <U extends AccountInterface>({
   authAdapter,
   createId,
   defaultPolicy,
@@ -101,7 +100,6 @@ export const createBroker = <U extends AccountInterface, C extends boolean = fal
   connectionStatusAdapter,
   retrySyncInterval = 5 * 60 * 1000,
   onTermination,
-  useConstantCase,
 }: {
   authAdapter: AuthAdapter<U>;
   createId: () => string;
@@ -111,9 +109,7 @@ export const createBroker = <U extends AccountInterface, C extends boolean = fal
   connectionStatusAdapter?: ConnectionStatusAdapter;
   retrySyncInterval?: number;
   onTermination?: (error?: Error) => void;
-  /** Whether to use constant case for aggregate and event types */
-  useConstantCase?: C;
-}): Broker<U, C> => {
+}): Broker<U> => {
   // create event bus
   const eventBus = createEventBus();
   if (onTermination) eventBus.onTermination(onTermination);
@@ -196,7 +192,7 @@ export const createBroker = <U extends AccountInterface, C extends boolean = fal
     return store;
   };
 
-  const aggBuilderCtx = createAggregateContext<U, C>({ createId, defaultPolicy, useConstantCase });
+  const aggBuilderCtx = createAggregateContext<U>({ createId, defaultPolicy });
   const aggregate = <A extends string>(
     aggregateType: A,
     options?: {

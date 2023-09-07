@@ -13,7 +13,6 @@ import type {
   AggregateConfig,
 } from '../utils/types';
 import type { AggregateStore } from './store';
-import { ConstantCase, constantCase } from '../utils/case-helpers';
 
 type AggregateEventConfigBuilder<
   U extends AccountInterface,
@@ -112,36 +111,10 @@ type AggregateEventConfigBuilder<
     }
   : never);
 
-type DefaultEventsConfig<
-  U extends AccountInterface,
-  A extends string,
-  S extends BaseState,
-  useConstantCase = false
-> = {
-  create: AggregateEventConfig<
-    U,
-    A,
-    'create',
-    `${A}${useConstantCase extends true ? '_CREATED' : '.create'}`,
-    S,
-    Omit<S, keyof BaseState>
-  >;
-  update: AggregateEventConfig<
-    U,
-    A,
-    'update',
-    `${A}${useConstantCase extends true ? '_UPDATED' : '.update'}`,
-    S,
-    Partial<Omit<S, keyof BaseState>>
-  >;
-  delete: AggregateEventConfig<
-    U,
-    A,
-    'delete',
-    `${A}${useConstantCase extends true ? '_DELETED' : '.delete'}`,
-    S,
-    undefined
-  >;
+type DefaultEventsConfig<U extends AccountInterface, A extends string, S extends BaseState> = {
+  create: AggregateEventConfig<U, A, 'create', `${A}.create`, S, Omit<S, keyof BaseState>>;
+  update: AggregateEventConfig<U, A, 'update', `${A}.update`, S, Partial<Omit<S, keyof BaseState>>>;
+  delete: AggregateEventConfig<U, A, 'delete', `${A}.delete`, S, undefined>;
 };
 
 export type AggregateConfigBuilder<
@@ -149,8 +122,7 @@ export type AggregateConfigBuilder<
   A extends string,
   S extends BaseState,
   C extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
-  registerable = false,
-  useConstantCase = false
+  registerable extends boolean = false
 > = {
   /** The aggregate config that is being constructed */
   config: AggregateConfig<U, A, S, C>;
@@ -162,7 +134,7 @@ export type AggregateConfigBuilder<
    * @returns the aggregate builder for chaining
    */
   schema: <
-    State extends Omit<S, keyof BaseState>,
+    State extends object,
     SchemaOptions extends {
       /** indicates if default create, update, and delete events should be defined based on the schema */
       createDefaultEvents: boolean;
@@ -177,8 +149,7 @@ export type AggregateConfigBuilder<
     SchemaOptions['createDefaultEvents'] extends true
       ? DefaultEventsConfig<U, A, State & BaseState>
       : { [fn: string]: AggregateEventConfig<U, A, any, any, BaseState & State, any> },
-    registerable,
-    useConstantCase
+    registerable
   >;
   /**
    * Set the repository for persisting the aggregate state
@@ -188,7 +159,7 @@ export type AggregateConfigBuilder<
    */
   repository: (
     repository: AggregateRepository<S>
-  ) => AggregateConfigBuilder<U, A, S, C, registerable, useConstantCase>;
+  ) => AggregateConfigBuilder<U, A, S, C, registerable>;
   /**
    * Set the events for the aggregate
    *
@@ -222,20 +193,13 @@ export type AggregateConfigBuilder<
             U,
             A,
             O,
-            T extends undefined
-              ? K extends string
-                ? useConstantCase extends true
-                  ? `${A}${ConstantCase<`.${K}`>}`
-                  : `${A}.${K}`
-                : never
-              : T,
+            T extends undefined ? (K extends string ? `${A}.${K}` : never) : T,
             S,
             P
           >
         : never;
     },
-    registerable,
-    useConstantCase
+    registerable
   >;
 } & (registerable extends true
   ? {
@@ -254,11 +218,24 @@ export type AggregateConfigBuilder<
  * @param ctx the context
  * @returns the aggregate builder context
  */
-export const createAggregateContext = <U extends AccountInterface, C extends boolean = false>(ctx: {
+export const createAggregateContext = <U extends AccountInterface>(ctx: {
   createId?: () => string;
   defaultPolicy?: Policy<U, unknown>;
-  useConstantCase?: C;
-}) => {
+}): {
+  aggregate: <
+    A extends string,
+    R extends
+      | ((config: AggregateConfig<U, A, any, any>) => AggregateStore<U, A, any, any>)
+      | undefined
+  >(
+    aggregateType: A,
+    options?: {
+      createId?: () => string;
+      defaultPolicy?: Policy<U, unknown>;
+      register?: R;
+    }
+  ) => AggregateConfigBuilder<U, A, BaseState, {}, R extends undefined ? false : true>;
+} => {
   return {
     /**
      * Define an aggregate
@@ -351,7 +328,6 @@ export const createAggregateContext = <U extends AccountInterface, C extends boo
           }
           if (config.eventType === undefined) {
             config.eventType = `${aggregateType}.${key}`;
-            if (ctx?.useConstantCase) config.eventType = constantCase(config.eventType);
           }
           return config;
         });
@@ -359,8 +335,7 @@ export const createAggregateContext = <U extends AccountInterface, C extends boo
 
       const aggBuilder: AggregateConfigBuilder<U, A, any, any> = {
         config: {
-          useConstantCase: ctx?.useConstantCase ?? false,
-          aggregateType: ctx?.useConstantCase ? constantCase(aggregateType) : aggregateType,
+          aggregateType: aggregateType,
           createId: options?.createId || ctx.createId,
           aggregateEvents: {},
         } as AggregateConfig<U, A, any, any>,
@@ -373,29 +348,13 @@ export const createAggregateContext = <U extends AccountInterface, C extends boo
             }
             aggBuilder.config.aggregateEvents = parseEventsConfig({
               create: event('create')
-                .type(
-                  ctx.useConstantCase
-                    ? `${constantCase(aggregateType)}_CREATED`
-                    : `${aggregateType}.create`
-                )
                 .payload(schema)
                 .constructor((payload) => payload),
               update: event('update')
-                .type(
-                  ctx.useConstantCase
-                    ? `${constantCase(aggregateType)}_UPDATED`
-                    : `${aggregateType}.update`
-                )
                 // @ts-ignore -- zod can't infer that because S is an object ZodSchema<S> must be a ZodObject
                 .payload(schema.partial() as ZodSchema<any>)
                 .reducer((state, payload) => ({ ...state, ...payload })),
-              delete: event('delete')
-                .type(
-                  ctx.useConstantCase
-                    ? `${constantCase(aggregateType)}_DELETED`
-                    : `${aggregateType}.delete`
-                )
-                .payload(z.undefined()),
+              delete: event('delete').payload(z.undefined()),
             });
           }
           return aggBuilder;
@@ -423,11 +382,10 @@ export const createAggregateContext = <U extends AccountInterface, C extends boo
 
       return aggBuilder as AggregateConfigBuilder<
         U,
-        C extends true ? ConstantCase<A> : A,
+        A,
         BaseState,
         {},
-        R extends undefined ? false : true,
-        C
+        R extends undefined ? false : true
       >;
     },
   };
@@ -436,7 +394,6 @@ export const createAggregateContext = <U extends AccountInterface, C extends boo
 /** Extract the union of event types from an aggregate config */
 export type AggregateEventTypeFromConfig<
   C extends {
-    useConstantCase?: boolean;
     aggregateEvents: {
       [fn: string]: AggregateEventConfig<any, any, any, any, any, any>;
     };

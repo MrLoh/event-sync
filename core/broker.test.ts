@@ -34,10 +34,9 @@ describe('create broker', () => {
       connectionStatusAdapter,
       retrySyncInterval,
       onTermination: overwrites?.onTermination,
-      useConstantCase: true,
     });
     const store = broker
-      .aggregate('PROFILE')
+      .aggregate('profile')
       .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true })
       .repository(aggregateRepository)
       .register();
@@ -59,7 +58,7 @@ describe('create broker', () => {
     const broker = createBroker({ authAdapter: createFakeAuthAdapter(), createId, defaultPolicy });
     // When an aggregate config is defined
     const { config } = broker
-      .aggregate('PROFILE')
+      .aggregate('profile')
       .schema(z.object({ name: z.string() }), { createDefaultEvents: true });
     // Then is has the correct create id function
     expect(config.createId).toBe(createId);
@@ -110,18 +109,18 @@ describe('create broker', () => {
     expect(eventServerAdapter.record).toHaveBeenCalled();
     expect(eventServerAdapter.recordedEvents).toHaveLength(1);
     expect(eventServerAdapter.recordedEvents[0]).toMatchObject({
-      aggregateType: 'PROFILE',
+      aggregateType: 'profile',
       aggregateId: id,
-      type: 'PROFILE_CREATED',
+      type: 'profile.create',
       payload: { name: 'test' },
     });
     // And the recorded time is stored in the persisted event
     await jest.advanceTimersByTimeAsync(0);
     expect(eventsRepository.events).toHaveLength(1);
     expect(eventsRepository.events[0]).toMatchObject({
-      aggregateType: 'PROFILE',
+      aggregateType: 'profile',
       aggregateId: id,
-      type: 'PROFILE_CREATED',
+      type: 'profile.create',
       payload: { name: 'test' },
       recordedAt: expect.any(Date),
     });
@@ -143,7 +142,7 @@ describe('create broker', () => {
     expect(eventsRepository.events).toHaveLength(1);
     expect(eventsRepository.events[0]).toMatchObject({
       aggregateId: id,
-      type: 'PROFILE_CREATED',
+      type: 'profile.create',
       payload: { name: 'test' },
       createdBy: undefined,
     });
@@ -163,7 +162,7 @@ describe('create broker', () => {
     expect(eventServerAdapter.record).toHaveBeenCalledWith(
       expect.objectContaining({
         aggregateId: id,
-        type: 'PROFILE_CREATED',
+        type: 'profile.create',
         payload: { name: 'test' },
         createdBy: accountId,
       })
@@ -173,7 +172,7 @@ describe('create broker', () => {
     expect(eventsRepository.events).toContainEqual(
       expect.objectContaining({
         aggregateId: id,
-        type: 'PROFILE_CREATED',
+        type: 'profile.create',
         payload: { name: 'test' },
         createdBy: accountId,
         recordedAt: expect.any(Date),
@@ -254,11 +253,11 @@ describe('create broker', () => {
     // Given there are new events available from the backend
     const eventServerAdapter = createFakeEventServerAdapter();
     jest.spyOn(eventServerAdapter, 'fetch');
-    const serverEvent1 = createEvent('PROFILE', 'PROFILE_CREATED', {
+    const serverEvent1 = createEvent('profile', 'profile.create', {
       payload: { name: 'server' },
       recordedAt: new Date(),
     });
-    const serverEvent2 = createEvent('PROFILE', 'PROFILE_UPDATED', {
+    const serverEvent2 = createEvent('profile', 'profile.update', {
       operation: 'update',
       payload: { name: 'server2' },
       aggregateId: serverEvent1.aggregateId,
@@ -288,7 +287,7 @@ describe('create broker', () => {
     const { broker, store, eventsRepository, retrySyncInterval } = setup({ eventServerAdapter });
     await jest.advanceTimersByTimeAsync(retrySyncInterval / 4);
     // When there are new events dispatched on the server
-    const serverEvent = createEvent('PROFILE', 'PROFILE_CREATED', {
+    const serverEvent = createEvent('profile', 'profile.create', {
       payload: { name: 'server' },
       recordedAt: new Date(),
     });
@@ -305,9 +304,9 @@ describe('create broker', () => {
     // And the event is persisted
     expect(eventsRepository.events).toHaveLength(1);
     expect(eventsRepository.events[0]).toMatchObject({
-      aggregateType: 'PROFILE',
+      aggregateType: 'profile',
       aggregateId: serverEvent.aggregateId,
-      type: 'PROFILE_CREATED',
+      type: 'profile.create',
       payload: { name: 'server' },
     });
   });
@@ -317,7 +316,7 @@ describe('create broker', () => {
     const { store, eventServerAdapter, eventsRepository } = setup();
     await jest.advanceTimersByTimeAsync(0);
     // When there are new events dispatched on the server
-    const event = createEvent('PROFILE', 'PROFILE_CREATED', {
+    const event = createEvent('profile', 'profile.create', {
       payload: { name: 'other client' },
       recordedAt: new Date(),
     });
@@ -335,9 +334,9 @@ describe('create broker', () => {
     // And the event is persisted
     expect(eventsRepository.events).toHaveLength(1);
     expect(eventsRepository.events[0]).toMatchObject({
-      aggregateType: 'PROFILE',
+      aggregateType: 'profile',
       aggregateId: event.aggregateId,
-      type: 'PROFILE_CREATED',
+      type: 'profile.create',
       payload: { name: 'other client' },
     });
   });
@@ -349,7 +348,7 @@ describe('create broker', () => {
     // When the broker clean up function is called
     broker.cleanup();
     // Then no more events are dispatched to the broker
-    const event = createEvent('PROFILE', 'PROFILE_CREATED', {
+    const event = createEvent('profile', 'profile.create', {
       payload: { name: 'other client' },
       recordedAt: new Date(),
     });
@@ -396,7 +395,7 @@ describe('create broker', () => {
     expect(broker.eventBus.terminated).toBe(true);
     await jest.advanceTimersByTimeAsync(0);
     // And new events are not dispatched to the broker
-    const event = createEvent('PROFILE', 'PROFILE_CREATED', {
+    const event = createEvent('profile', 'profile.create', {
       payload: { name: 'other client' },
       recordedAt: new Date(),
     });

@@ -17,11 +17,11 @@
     "rxjs": "^7.8.1",
     "ts-jest": "^29.1.1",
     "typescript": "^4.9.5",
-    "zod": "^3.21.4"
+    "zod": "3.22.2"
   },
   "peerDependencies": {
     "rxjs": "^7.8.1",
-    "zod": "^3.21.4"
+    "zod": "^3.22.2"
   },
   "jest": {
     "preset": "ts-jest",
