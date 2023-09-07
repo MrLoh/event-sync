@@ -1,5 +1,5 @@
 import { BehaviorSubject, filter, interval, throttleTime, merge } from 'rxjs';
-import { tryCatch } from '../utils/try-catch';
+import { tryCatch } from '../utils/result';
 import { type EventBus, createEventBus } from './event-bus';
 import { type AggregateStore, createStore } from './store';
 import { createAggregateContext, type AggregateConfigBuilder } from './aggregate';
@@ -122,10 +122,10 @@ export const createBroker = <U extends AccountInterface, C extends boolean = fal
     const account = await authAdapter.getAccount();
     if (!eventServerAdapter || !account) return;
     // TODO: make errors from event server adapter more specific
-    const { res } = await tryCatch(() => eventServerAdapter.record(event));
-    if (res && eventsRepository) {
-      await eventsRepository.markRecorded(res.eventId, res.recordedAt, res.recordedBy);
-      stores[event.aggregateType]?.markRecorded(event.aggregateId, res.recordedAt, res.recordedBy);
+    const { val } = await tryCatch(() => eventServerAdapter.record(event));
+    if (val && eventsRepository) {
+      await eventsRepository.markRecorded(val.eventId, val.recordedAt, val.recordedBy);
+      stores[event.aggregateType]?.markRecorded(event.aggregateId, val.recordedAt, val.recordedBy);
     }
   };
 
@@ -146,7 +146,7 @@ export const createBroker = <U extends AccountInterface, C extends boolean = fal
         // fetch any new events
         const lastRecordedEvent = await eventsRepository.getLastRecordedEvent();
         // TODO: make errors from event server adapter more specific
-        const { res: newEvents } = await tryCatch(() =>
+        const { val: newEvents } = await tryCatch(() =>
           eventServerAdapter?.fetch(lastRecordedEvent?.id || null)
         );
         if (newEvents?.length) newEvents.map(dispatchEvent);
