@@ -9,6 +9,8 @@ jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
+    permissions:
+      checks: write
     steps:
       - name: 🚚 Checkout Repo
         uses: actions/checkout@v3
@@ -26,6 +28,13 @@ jobs:
         run: yarn typecheck
 
       - name: 🧪 Run Tests
-        run: yarn test
+        run: yarn test --coverage
   
-  
+      - name: 📋 Report Test Results
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: Test Results
+          path: '.github/test-results/jest-results.xml'
+          reporter: jest-junit
+        

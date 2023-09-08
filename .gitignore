@@ -20,4 +20,6 @@ yarn-error.log
 
 # Other
 #
-coverage
+.github/test-results/**/*
+
+!.github/test-results/coverage-summary.json
