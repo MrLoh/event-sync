@@ -101,7 +101,8 @@ describe('create aggregate config', () => {
   it('can define specific policy for event', () => {
     // Given an aggregate with a default policy
     const base = ctx
-      .aggregate('profile', { defaultPolicy: () => false })
+      .aggregate('profile')
+      .policy(() => false)
       .schema(z.object({ name: z.string().min(2) }));
     // When defining a event with a policy
     const eventPolicy = jest.fn(() => true);
@@ -121,7 +122,8 @@ describe('create aggregate config', () => {
     // Given a default policy is defined on the aggregate
     const aggregatePolicy = jest.fn(() => true);
     const base = ctx
-      .aggregate('profile', { defaultPolicy: aggregatePolicy })
+      .aggregate('profile')
+      .policy(aggregatePolicy)
       .schema(z.object({ name: z.string().min(2) }));
     // When the event policy is not defined
     const { config } = base.events((event) => ({
@@ -132,6 +134,8 @@ describe('create aggregate config', () => {
     // Then the aggregate policy should be used
     expect(config.aggregateEvents.delete.authPolicy).toBe(aggregatePolicy);
     config.aggregateEvents.delete.authPolicy({ id: 'tester', roles: [] }, {} as any);
+    // And the default policy should be set on the config
+    expect(config.defaultAuthPolicy).toBe(aggregatePolicy);
   });
 
   it('can define default policy on context', () => {
@@ -151,11 +155,13 @@ describe('create aggregate config', () => {
     expect(config.aggregateEvents.create.authPolicy).toBe(contextPolicy);
     config.aggregateEvents.create.authPolicy({ id: 'tester', roles: [] }, {} as any);
     expect(contextPolicy).toHaveBeenCalled();
+    // And the default policy should be set on the config
+    expect(config.defaultAuthPolicy).toBe(contextPolicy);
   });
 
   it('throw error if no policy is defined', () => {
     // Given no default policy is defined on the context or the aggregate
-    const ctx = createContext<Account>({ createId });
+    const ctx = createContext<Account>();
     const base = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // When trying to define a event without a policy
     expect(
@@ -264,6 +270,16 @@ describe('create aggregate config', () => {
       () => base.repository(createFakeAggregateRepository<BaseState>())
       // Then an error should be thrown
     ).toThrowError('Repository already set');
+  });
+
+  it('throws error if trying to overwrite default auth policy definition', () => {
+    // Given a default auth policy is already defined
+    const base = ctx.aggregate('profile').policy(() => true);
+    // When trying to overwrite the default auth policy
+    expect(
+      () => base.policy(() => true)
+      // Then an error should be thrown
+    ).toThrowError('Policy already set');
   });
 
   it('can pass register function to aggregate config', () => {

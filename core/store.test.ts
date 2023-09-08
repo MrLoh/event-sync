@@ -283,6 +283,33 @@ describe('create store', () => {
     expect(await aggregateRepository.getAll()).toEqual({});
   });
 
+  it('prevents defining events that would overwrite default functions', () => {
+    // Given an aggregate config with conflicting event names
+    expect(() =>
+      createStore(
+        {
+          aggregateType: 'PROFILE',
+          aggregateSchema: profileSchema,
+          aggregateEvents: {
+            initialize: {
+              aggregateType: 'PROFILE',
+              eventType: 'PROFILE_INITIALIZED',
+              operation: 'create' as const,
+              payloadSchema: profileSchema,
+              authPolicy: () => true,
+              construct: () => ({}),
+            },
+          },
+        },
+        {
+          authAdapter: createFakeAuthAdapter(),
+          createId,
+          eventBus: createEventBus(),
+        }
+      )
+    ).toThrowError('events cannot have the following names');
+  });
+
   it('rolls back state and terminates event bus if event cannot be persisted', async () => {
     // Given a store with an existing profile
     const { store, context, aggregateRepository } = setup();

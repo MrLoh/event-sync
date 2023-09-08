@@ -279,6 +279,7 @@ export const createStore = <
         return async (id: string, payload?: any): Promise<void> => {
           await initialization;
           const currState = collection$.value[id];
+          if (!currState) throw new NotFoundError(`Aggregate with id ${id} not found`);
           await dispatch(id, payload, currState.lastEventId);
           return;
         };
@@ -298,7 +299,6 @@ export const createStore = <
     'markRecorded',
   ];
   if (restrictedProps.some((prop) => agg.aggregateEvents?.hasOwnProperty(prop))) {
-    // istanbul ignore next
     throw new Error(`events cannot have the following names: ${restrictedProps.join(', ')}`);
   }
 

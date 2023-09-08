@@ -156,7 +156,7 @@ export type AggregateEventConfig<
   eventType: T;
   /** The operation the command performs */
   operation: O;
-  /** The policy that determines if the account is authorized to execute the command */
+  /** The policy that determines if the account is authorized for the event */
   authPolicy: Policy<U, P>;
   /** The schema of the payload */
   payloadSchema?: ZodSchema<P>;
@@ -219,6 +219,8 @@ export type AggregateConfig<
   createId?: () => string;
   /** Whether to use constant casing for event and aggregate type strings */
   useConstantCase?: boolean;
+  /** The default policy for all actions that determines if the account is authorized for the event */
+  defaultAuthPolicy?: Policy<U, any>;
 };
 
 export type EventServerAdapter = {

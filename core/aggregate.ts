@@ -65,7 +65,7 @@ type AggregateEventConfigBuilder<
     schema: ZodSchema<Payload>
   ) => AggregateEventConfigBuilder<U, A, O, T, S, Payload>;
   /**
-   * Set the policy that determines if the account is authorized to execute the event
+   * Set the policy that determines if the account is authorized for the event
    *
    * @param policy the policy function
    * @returns the event builder for chaining
@@ -152,6 +152,13 @@ export type AggregateConfigBuilder<
     registerable
   >;
   /**
+   * Set the default policy that determines if the account is authorized for the event
+   *
+   * @param policy the default policy function
+   * @returns the event builder for chaining
+   */
+  policy: (policy: Policy<U, unknown>) => AggregateConfigBuilder<U, A, S, C, registerable>;
+  /**
    * Set the repository for persisting the aggregate state
    *
    * @param repository the repository
@@ -174,7 +181,7 @@ export type AggregateConfigBuilder<
     maker: (
       event: <O extends Operation>(
         operation: O
-      ) => AggregateEventConfigBuilder<U, A, O, undefined, S, unknown>
+      ) => AggregateEventConfigBuilder<U, A, O, undefined, S, undefined>
     ) => Events
   ) => AggregateConfigBuilder<
     U,
@@ -218,10 +225,12 @@ export type AggregateConfigBuilder<
  * @param ctx the context
  * @returns the aggregate builder context
  */
-export const createContext = <U extends AccountInterface>(ctx: {
-  createId?: () => string;
-  defaultPolicy?: Policy<U, unknown>;
-}): {
+export const createContext = <U extends AccountInterface>(
+  ctx: {
+    createId?: () => string;
+    defaultPolicy?: Policy<U, unknown>;
+  } = {}
+): {
   aggregate: <
     A extends string,
     R extends
@@ -231,11 +240,11 @@ export const createContext = <U extends AccountInterface>(ctx: {
     aggregateType: A,
     options?: {
       createId?: () => string;
-      defaultPolicy?: Policy<U, unknown>;
       register?: R;
     }
   ) => AggregateConfigBuilder<U, A, BaseState, {}, R extends undefined ? false : true>;
 } => {
+  let defaultPolicy = ctx.defaultPolicy;
   return {
     /**
      * Define an aggregate
@@ -253,7 +262,6 @@ export const createContext = <U extends AccountInterface>(ctx: {
       aggregateType: A,
       options?: {
         createId?: () => string;
-        defaultPolicy?: Policy<U, unknown>;
         register?: R;
       }
     ) => {
@@ -270,7 +278,8 @@ export const createContext = <U extends AccountInterface>(ctx: {
           config: {
             aggregateType,
             operation,
-            authPolicy: options?.defaultPolicy ?? ctx.defaultPolicy,
+            authPolicy: defaultPolicy,
+            payloadSchema: operation === 'delete' ? z.undefined() : undefined,
           },
           type: (type) => {
             eventBuilder.config.eventType = type;
@@ -338,6 +347,7 @@ export const createContext = <U extends AccountInterface>(ctx: {
           aggregateType: aggregateType,
           createId: options?.createId || ctx.createId,
           aggregateEvents: {},
+          defaultAuthPolicy: ctx.defaultPolicy,
         } as AggregateConfig<U, A, any, any>,
         schema: (schema, schemaOptions) => {
           if (aggBuilder.config.aggregateSchema) throw new Error('Schema already set');
@@ -357,6 +367,17 @@ export const createContext = <U extends AccountInterface>(ctx: {
               delete: event('delete').payload(z.undefined()),
             });
           }
+          return aggBuilder;
+        },
+        policy: (policy) => {
+          if (
+            aggBuilder.config.defaultAuthPolicy &&
+            aggBuilder.config.defaultAuthPolicy !== ctx.defaultPolicy
+          ) {
+            throw new Error('Policy already set');
+          }
+          aggBuilder.config.defaultAuthPolicy = policy;
+          defaultPolicy = policy;
           return aggBuilder;
         },
         repository: (repository) => {
