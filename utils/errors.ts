@@ -20,12 +20,3 @@ export class NotFoundError extends Error {
     this.name = 'NotFoundError';
   }
 }
-
-export class StorageError extends Error {
-  cause: Error;
-  constructor(message: string, cause: Error) {
-    super(message);
-    this.name = 'StorageError';
-    this.cause = cause;
-  }
-}
