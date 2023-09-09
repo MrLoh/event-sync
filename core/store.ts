@@ -12,69 +12,50 @@ import type {
   AuthAdapter,
   EventsRepository,
   AggregateConfig,
+  AggregateEventDispatchers,
+  AggregateCommandsMaker,
 } from '../utils/types';
-
-type AggregateEventDispatchers<
-  U extends AccountInterface,
-  A extends string,
-  S extends BaseState,
-  C extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
-> = {
-  [F in keyof C]: C[F] extends AggregateEventConfig<U, A, infer O, any, S, infer P>
-    ? O extends 'create'
-      ? P extends undefined
-        ? () => Promise<S>
-        : (payload: P) => Promise<string>
-      : O extends 'update'
-      ? P extends undefined
-        ? (id: string) => Promise<void>
-        : (id: string, payload: P) => Promise<void>
-      : O extends 'delete'
-      ? P extends undefined
-        ? (id: string) => Promise<void>
-        : (id: string, payload: P) => Promise<void>
-      : never
-    : never;
-};
 
 export type AggregateStore<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  C extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> }
-> = AggregateEventDispatchers<U, A, S, C> & {
-  /**
-   * object containing the states of all aggregates keyed by id
-   */
-  state: { [id: string]: S };
-  /**
-   * subscribe to changes in the state of the aggregates
-   *
-   * @param fn the function to call when the state changes
-   * @returns a function to unsubscribe
-   */
-  subscribe: (fn: (state: { [id: string]: S }) => void) => () => void;
-  /**
-   * Mark an aggregate as recorded to set recorded by if undefined and last recorded by fields
-   */
-  markRecorded: (aggregateId: string, recordedAt: Date, recordedBy: string) => Promise<void>;
-  /**
-   * Reset state of the aggregates to the initial state and delete all entries from the aggregate
-   */
-  reset: () => Promise<void>;
-  /**
-   * await this to ensure the store is initialized
-   *
-   * @remarks
-   * it is not necessary to call this function to initialize the store, it's just a convenience to
-   * await the initialization and take action when it's done.
-   */
-  initialize: () => Promise<void>;
-  /**
-   * indicates wether the store has been initialized
-   */
-  initialized: boolean;
-};
+  E extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
+  C extends AggregateCommandsMaker<U, A, S, E>
+> = Omit<AggregateEventDispatchers<U, A, S, E>, keyof ReturnType<C>> &
+  ReturnType<C> & {
+    /**
+     * object containing the states of all aggregates keyed by id
+     */
+    state: { [id: string]: S };
+    /**
+     * subscribe to changes in the state of the aggregates
+     *
+     * @param fn the function to call when the state changes
+     * @returns a function to unsubscribe
+     */
+    subscribe: (fn: (state: { [id: string]: S }) => void) => () => void;
+    /**
+     * Mark an aggregate as recorded to set recorded by if undefined and last recorded by fields
+     */
+    markRecorded: (aggregateId: string, recordedAt: Date, recordedBy: string) => Promise<void>;
+    /**
+     * Reset state of the aggregates to the initial state and delete all entries from the aggregate
+     */
+    reset: () => Promise<void>;
+    /**
+     * await this to ensure the store is initialized
+     *
+     * @remarks
+     * it is not necessary to call this function to initialize the store, it's just a convenience to
+     * await the initialization and take action when it's done.
+     */
+    initialize: () => Promise<void>;
+    /**
+     * indicates wether the store has been initialized
+     */
+    initialized: boolean;
+  };
 
 export const baseStateSchema = z.object({
   id: z.string(),
@@ -103,18 +84,17 @@ export const createStore = <
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  C extends {
-    [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any>;
-  }
+  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
+  C extends AggregateCommandsMaker<U, A, S, E>
 >(
-  agg: AggregateConfig<U, A, S, C>,
+  agg: AggregateConfig<U, A, S, E, C>,
   ctx: {
     authAdapter: AuthAdapter<U>;
     createId: () => string;
     eventsRepository?: EventsRepository;
     eventBus: EventBus;
   }
-): AggregateStore<U, A, S, C> => {
+): AggregateStore<U, A, S, E, C> => {
   // setup aggregate state as a BehaviorSubject
   const collection$ = new BehaviorSubject<{ [id: string]: S }>({});
 
@@ -287,7 +267,13 @@ export const createStore = <
         // istanbul ignore next
         throw new Error(`Invalid operation ${eventConfig.operation}`);
     }
-  }) as AggregateEventDispatchers<U, A, S, C>;
+  }) as AggregateEventDispatchers<U, A, S, E>;
+
+  const commands = (agg.aggregateCommandMaker?.({
+    getState: () => collection$.value,
+    events: dispatchers,
+    ...ctx.authAdapter,
+  }) ?? {}) as ReturnType<C>;
 
   // ensure events don't overwrite default store methods
   const restrictedProps = [
@@ -298,8 +284,11 @@ export const createStore = <
     'initialized',
     'markRecorded',
   ];
-  if (restrictedProps.some((prop) => agg.aggregateEvents?.hasOwnProperty(prop))) {
+  if (restrictedProps.some((prop) => dispatchers?.hasOwnProperty(prop))) {
     throw new Error(`events cannot have the following names: ${restrictedProps.join(', ')}`);
+  }
+  if (restrictedProps.some((prop) => commands?.hasOwnProperty(prop))) {
+    throw new Error(`commands cannot have the following names: ${restrictedProps.join(', ')}`);
   }
 
   return {
@@ -336,5 +325,6 @@ export const createStore = <
     },
     // spreading the event functions needs to be last because the getter doesn't work otherwise
     ...dispatchers,
+    ...commands,
   };
 };

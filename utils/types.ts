@@ -199,13 +199,64 @@ export type AggregateEventConfig<
     }
   : never);
 
+export type DefaultAggregateEventsConfig<
+  U extends AccountInterface,
+  A extends string,
+  S extends BaseState
+> = {
+  create: AggregateEventConfig<U, A, 'create', `${A}.create`, S, Omit<S, keyof BaseState>>;
+  update: AggregateEventConfig<U, A, 'update', `${A}.update`, S, Partial<Omit<S, keyof BaseState>>>;
+  delete: AggregateEventConfig<U, A, 'delete', `${A}.delete`, S, undefined>;
+};
+
+export type AggregateEventDispatchers<
+  U extends AccountInterface,
+  A extends string,
+  S extends BaseState,
+  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
+> = {
+  [K in keyof E]: E[K] extends AggregateEventConfig<U, A, infer O, any, S, infer P>
+    ? O extends 'create'
+      ? P extends undefined
+        ? () => Promise<S>
+        : (payload: P) => Promise<string>
+      : O extends 'update'
+      ? P extends undefined
+        ? (id: string) => Promise<void>
+        : (id: string, payload: P) => Promise<void>
+      : O extends 'delete'
+      ? P extends undefined
+        ? (id: string) => Promise<void>
+        : (id: string, payload: P) => Promise<void>
+      : never
+    : never;
+};
+
+export type AggregateCommandsContext<
+  U extends AccountInterface,
+  A extends string,
+  S extends BaseState,
+  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
+> = AuthAdapter<U> & {
+  /** Get the current state of the aggregate */
+  getState: () => { [id: string]: S };
+  /** A map of event dispatchers for the */
+  events: AggregateEventDispatchers<U, A, S, E>;
+};
+
+export type AggregateCommandsMaker<
+  U extends AccountInterface,
+  A extends string,
+  S extends BaseState,
+  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
+> = (context: AggregateCommandsContext<U, A, S, E>) => { [fn: string]: (...args: any[]) => any };
+
 export type AggregateConfig<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  C extends {
-    [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any>;
-  }
+  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
+  C extends AggregateCommandsMaker<U, A, S, E>
 > = {
   /** The type of the aggregate */
   aggregateType: A;
@@ -214,11 +265,11 @@ export type AggregateConfig<
   /** The repository for persisting the aggregates state in */
   aggregateRepository?: AggregateRepository<S>;
   /** The configuration for aggregate events */
-  aggregateEvents: C;
+  aggregateEvents: E;
+  /** Factory for additional command functions that can be called on the aggregate */
+  aggregateCommandMaker?: C;
   /** Function to generate unique IDs */
   createId?: () => string;
-  /** Whether to use constant casing for event and aggregate type strings */
-  useConstantCase?: boolean;
   /** The default policy for all actions that determines if the account is authorized for the event */
   defaultAuthPolicy?: Policy<U, any>;
 };

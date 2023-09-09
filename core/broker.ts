@@ -16,6 +16,7 @@ import type {
   EventsRepository,
   Operation,
   Policy,
+  AggregateCommandsMaker,
 } from '../utils/types';
 
 export type Broker<U extends AccountInterface> = {
@@ -36,12 +37,11 @@ export type Broker<U extends AccountInterface> = {
   register: <
     A extends string,
     S extends BaseState,
-    C extends {
-      [fn: string]: AggregateEventConfig<U, A, any, any, S, any>;
-    }
+    E extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
+    C extends AggregateCommandsMaker<U, A, S, E>
   >(
-    agg: AggregateConfig<U, A, S, C>
-  ) => AggregateStore<U, A, S, C>;
+    agg: AggregateConfig<U, A, S, E, C>
+  ) => AggregateStore<U, A, S, E, C>;
   /**
    * Create an aggregate with the broker as a context
    *
@@ -55,7 +55,7 @@ export type Broker<U extends AccountInterface> = {
       createId?: () => string;
       defaultPolicy?: Policy<U, unknown>;
     }
-  ) => AggregateConfigBuilder<U, A, BaseState, {}, true>;
+  ) => AggregateConfigBuilder<U, A, BaseState, {}, () => {}, true>;
   /**
    * Syncs events that failed to record. This should be called after login since events are only
    * synced if the account adapter returns an account.
@@ -177,15 +177,14 @@ export const createBroker = <U extends AccountInterface>({
   };
   let unsubscribe = initialize();
 
-  const stores: { [aggregateType: string]: AggregateStore<U, any, any, any> } = {};
+  const stores: { [aggregateType: string]: AggregateStore<U, any, any, any, any> } = {};
   const register = <
     A extends string,
     S extends BaseState,
-    C extends {
-      [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any>;
-    }
+    E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
+    C extends AggregateCommandsMaker<U, A, S, E>
   >(
-    agg: AggregateConfig<U, A, S, C>
+    agg: AggregateConfig<U, A, S, E, C>
   ) => {
     const store = createStore(agg, { authAdapter, createId, eventsRepository, eventBus });
     stores[agg.aggregateType] = store;

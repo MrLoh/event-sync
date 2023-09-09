@@ -1,7 +1,7 @@
 import { ZodError, z } from 'zod';
 import { createStore } from './store';
 import { createEventBus } from './event-bus';
-import { InvalidInputError, UnauthorizedError } from '../utils/errors';
+import { ConflictError, InvalidInputError, UnauthorizedError } from '../utils/errors';
 import {
   createId,
   createFakeAuthAdapter,
@@ -9,16 +9,30 @@ import {
   createFakeEventsRepository,
   createAggregateObject,
 } from '../utils/fakes';
-import type { AnyAggregateEvent, BaseState, AggregateRepository } from '../utils/types';
+import type {
+  AnyAggregateEvent,
+  BaseState,
+  AggregateRepository,
+  AggregateCommandsMaker,
+  DefaultAggregateEventsConfig,
+} from '../utils/types';
 import type { Account } from '../utils/fakes';
 
 describe('create store', () => {
-  const profileSchema = z.object({ name: z.string().min(2) });
+  const profileSchema = z.object({ name: z.string().min(2), accountId: z.string().optional() });
   type Profile = z.infer<typeof profileSchema>;
 
-  const setup = (overwrites?: {
+  const setup = <
+    C extends AggregateCommandsMaker<
+      Account,
+      'PROFILE',
+      Profile & BaseState,
+      DefaultAggregateEventsConfig<Account, 'PROFILE', Profile & BaseState>
+    >
+  >(overwrites?: {
     aggregateRepository?: AggregateRepository<Profile & BaseState>;
     authPolicy?: (account: Account | null) => boolean;
+    aggregateCommandMaker?: C;
   }) => {
     const aggregateRepository =
       overwrites?.aggregateRepository ?? createFakeAggregateRepository<Profile & BaseState>();
@@ -41,7 +55,7 @@ describe('create store', () => {
             authPolicy:
               overwrites?.authPolicy ??
               ((account: Account | null) => account?.roles.includes('creator') ?? false),
-            construct: ({ name }: Profile) => ({ name }),
+            construct: (payload: Profile) => payload,
           },
           update: {
             aggregateType: 'PROFILE',
@@ -64,6 +78,7 @@ describe('create store', () => {
             destruct: () => {},
           },
         },
+        aggregateCommandMaker: overwrites?.aggregateCommandMaker,
         aggregateRepository,
       },
       context
@@ -257,6 +272,41 @@ describe('create store', () => {
     expect(store.state['p1']).toMatchObject({ id: 'p1', name: 'tester' });
   });
 
+  it('commands have proper context', async () => {
+    // Given a store with a create command
+    const { store, context } = setup({
+      aggregateCommandMaker: ({ events, getState, getAccount }) => ({
+        create: async (name?: string) => {
+          const account = await getAccount();
+          if (Object.values(getState()).find((p) => p.accountId === account?.id)) {
+            throw new ConflictError(`profile for account ${account?.id} already exists`);
+          }
+          await events.create({ name: name ?? 'Anonymous', accountId: account?.id });
+        },
+      }),
+    });
+    // And a subscriber to the event bus
+    const subscriber = jest.fn();
+    context.eventBus.subscribe(subscriber);
+    // And an account
+    const account = await context.authAdapter.getAccount();
+    // When the create command is called
+    await store.create();
+    // Then it can use the context to get information and dispatch an event
+    expect(subscriber).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'PROFILE_CREATED',
+        aggregateId: expect.any(String),
+        payload: { name: 'Anonymous', accountId: account?.id },
+      })
+    );
+    // When the create command is called again
+    expect(() => store.create()).rejects.toThrowError(
+      // Then it can access the current state to run custom logic
+      new ConflictError(`profile for account ${account?.id} already exists`)
+    );
+  });
+
   it('can check initialization status', async () => {
     // Given a store
     const { store } = setup();
@@ -283,13 +333,12 @@ describe('create store', () => {
     expect(await aggregateRepository.getAll()).toEqual({});
   });
 
-  it('prevents defining events that would overwrite default functions', () => {
+  it('throws if trying to define events that would overwrite default functions', () => {
     // Given an aggregate config with conflicting event names
     expect(() =>
       createStore(
         {
           aggregateType: 'PROFILE',
-          aggregateSchema: profileSchema,
           aggregateEvents: {
             initialize: {
               aggregateType: 'PROFILE',
@@ -301,13 +350,23 @@ describe('create store', () => {
             },
           },
         },
-        {
-          authAdapter: createFakeAuthAdapter(),
-          createId,
-          eventBus: createEventBus(),
-        }
+        { authAdapter: createFakeAuthAdapter(), createId, eventBus: createEventBus() }
       )
     ).toThrowError('events cannot have the following names');
+  });
+
+  it('throws if trying to define commands that would overwrite default functions', () => {
+    // Given an aggregate config with conflicting event names
+    expect(() =>
+      createStore(
+        {
+          aggregateType: 'PROFILE',
+          aggregateEvents: {},
+          aggregateCommandMaker: () => ({ initialize: () => {} }),
+        },
+        { authAdapter: createFakeAuthAdapter(), createId, eventBus: createEventBus() }
+      )
+    ).toThrowError('commands cannot have the following names');
   });
 
   it('rolls back state and terminates event bus if event cannot be persisted', async () => {

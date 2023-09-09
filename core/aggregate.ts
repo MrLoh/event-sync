@@ -11,6 +11,9 @@ import type {
   AggregateEvent,
   Policy,
   AggregateConfig,
+  AggregateCommandsContext,
+  AggregateCommandsMaker,
+  DefaultAggregateEventsConfig,
 } from '../utils/types';
 import type { AggregateStore } from './store';
 
@@ -111,21 +114,16 @@ type AggregateEventConfigBuilder<
     }
   : never);
 
-type DefaultEventsConfig<U extends AccountInterface, A extends string, S extends BaseState> = {
-  create: AggregateEventConfig<U, A, 'create', `${A}.create`, S, Omit<S, keyof BaseState>>;
-  update: AggregateEventConfig<U, A, 'update', `${A}.update`, S, Partial<Omit<S, keyof BaseState>>>;
-  delete: AggregateEventConfig<U, A, 'delete', `${A}.delete`, S, undefined>;
-};
-
 export type AggregateConfigBuilder<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  C extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
+  E extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
+  C extends AggregateCommandsMaker<U, A, S, E>,
   registerable extends boolean = false
 > = {
   /** The aggregate config that is being constructed */
-  config: AggregateConfig<U, A, S, C>;
+  config: AggregateConfig<U, A, S, E, C>;
   /**
    * Set the schema for the aggregate state
    *
@@ -147,8 +145,16 @@ export type AggregateConfigBuilder<
     A,
     State & BaseState,
     SchemaOptions['createDefaultEvents'] extends true
-      ? DefaultEventsConfig<U, A, State & BaseState>
+      ? DefaultAggregateEventsConfig<U, A, State & BaseState>
       : { [fn: string]: AggregateEventConfig<U, A, any, any, BaseState & State, any> },
+    AggregateCommandsMaker<
+      U,
+      A,
+      State & BaseState,
+      SchemaOptions['createDefaultEvents'] extends true
+        ? DefaultAggregateEventsConfig<U, A, State & BaseState>
+        : { [fn: string]: AggregateEventConfig<U, A, any, any, BaseState & State, any> }
+    >,
     registerable
   >;
   /**
@@ -157,7 +163,7 @@ export type AggregateConfigBuilder<
    * @param policy the default policy function
    * @returns the event builder for chaining
    */
-  policy: (policy: Policy<U, unknown>) => AggregateConfigBuilder<U, A, S, C, registerable>;
+  policy: (policy: Policy<U, unknown>) => AggregateConfigBuilder<U, A, S, E, C, registerable>;
   /**
    * Set the repository for persisting the aggregate state
    *
@@ -166,7 +172,7 @@ export type AggregateConfigBuilder<
    */
   repository: (
     repository: AggregateRepository<S>
-  ) => AggregateConfigBuilder<U, A, S, C, registerable>;
+  ) => AggregateConfigBuilder<U, A, S, E, C, registerable>;
   /**
    * Set the events for the aggregate
    *
@@ -206,6 +212,28 @@ export type AggregateConfigBuilder<
           >
         : never;
     },
+    // @ts-ignore -- they correct type is set later with the commands setter
+    C,
+    registerable
+  >;
+  /**
+   * Set additional commands for the aggregate (e.g. to define commands)
+   *
+   * @param maker a function that takes the command context and returns a map of commands
+   * @returns the aggregate builder for chaining
+   */
+  commands: <Commands extends { [fn: string]: (...args: any[]) => any }>(
+    maker: (context: AggregateCommandsContext<U, A, S, E>) => Commands
+  ) => AggregateConfigBuilder<
+    U,
+    A,
+    S,
+    E,
+    (context: AggregateCommandsContext<U, A, S, E>) => {
+      [K in keyof Commands]: Commands[K] extends (...args: infer P) => infer R
+        ? (...args: P) => R
+        : never;
+    },
     registerable
   >;
 } & (registerable extends true
@@ -215,7 +243,7 @@ export type AggregateConfigBuilder<
        *
        * @returns the aggregate store
        */
-      register: () => AggregateStore<U, A, S, C>;
+      register: () => AggregateStore<U, A, S, E, C>;
     }
   : {});
 
@@ -234,7 +262,7 @@ export const createContext = <U extends AccountInterface>(
   aggregate: <
     A extends string,
     R extends
-      | ((config: AggregateConfig<U, A, any, any>) => AggregateStore<U, A, any, any>)
+      | ((config: AggregateConfig<U, A, any, any, any>) => AggregateStore<U, A, any, any, any>)
       | undefined
   >(
     aggregateType: A,
@@ -242,185 +270,191 @@ export const createContext = <U extends AccountInterface>(
       createId?: () => string;
       register?: R;
     }
-  ) => AggregateConfigBuilder<U, A, BaseState, {}, R extends undefined ? false : true>;
+  ) => AggregateConfigBuilder<U, A, BaseState, {}, () => {}, R extends undefined ? false : true>;
 } => {
   let defaultPolicy = ctx.defaultPolicy;
-  return {
+
+  /**
+   * Define an aggregate
+   *
+   * @param aggregateType the type of the aggregate
+   * @param options options for the aggregate
+   * @returns the aggregate builder for chaining
+   */
+  const aggregate = <
+    A extends string,
+    R extends
+      | ((config: AggregateConfig<U, A, any, any, any>) => AggregateStore<U, A, any, any, any>)
+      | undefined
+  >(
+    aggregateType: A,
+    options?: {
+      createId?: () => string;
+      register?: R;
+    }
+  ) => {
     /**
-     * Define an aggregate
+     * Define a event for the aggregate
      *
-     * @param aggregateType the type of the aggregate
-     * @param options options for the aggregate
-     * @returns the aggregate builder for chaining
+     * @param eventType the event type
+     * @param operation the operation the event performs
+     * @returns the event builder for chaining
      */
-    aggregate: <
-      A extends string,
-      R extends
-        | ((config: AggregateConfig<U, A, any, any>) => AggregateStore<U, A, any, any>)
-        | undefined
-    >(
-      aggregateType: A,
-      options?: {
-        createId?: () => string;
-        register?: R;
-      }
-    ) => {
-      /**
-       * Define a event for the aggregate
-       *
-       * @param eventType the event type
-       * @param operation the operation the event performs
-       * @returns the event builder for chaining
-       */
-      const event = <O extends Operation>(operation: O) => {
-        // @ts-ignore -- we define action functions for each type of operation and throw an error if mismatched
-        const eventBuilder: AggregateEventConfigBuilder<U, A, O, T, any, any> = {
-          config: {
-            aggregateType,
-            operation,
-            authPolicy: defaultPolicy,
-            payloadSchema: operation === 'delete' ? z.undefined() : undefined,
-          },
-          type: (type) => {
-            eventBuilder.config.eventType = type;
-            return eventBuilder;
-          },
-          payload: <Payload>(schema: ZodSchema<Payload>) => {
-            eventBuilder.config.payloadSchema = schema;
-            return eventBuilder;
-          },
-          policy: (policy) => {
-            eventBuilder.config.authPolicy = policy;
-            return eventBuilder;
-          },
-          constructor: (constructor) => {
-            // istanbul ignore next
-            if (eventBuilder.config.operation !== 'create') {
-              throw new Error('Constructor is only valid for create operations');
-            }
-            eventBuilder.config.construct = constructor;
-            return eventBuilder;
-          },
-          reducer: (reducer) => {
-            // istanbul ignore next
-            if (eventBuilder.config.operation !== 'update') {
-              throw new Error('Reducer is only valid for update operations');
-            }
-            eventBuilder.config.reduce = reducer;
-            return eventBuilder;
-          },
-          destructor: (destructor) => {
-            // istanbul ignore next
-            if (eventBuilder.config.operation !== 'delete') {
-              throw new Error('Destructor is only valid for delete operations');
-            }
-            eventBuilder.config.destruct = destructor;
-            return eventBuilder;
-          },
-        };
-        return eventBuilder;
-      };
-
-      // extract config from builder functions and throws an error if any configuration is missing
-      const parseEventsConfig = (eventBuilders: {
-        [fn: string]: { config: AggregateEventConfigBuilder<U, A, any, any, any, any>['config'] };
-      }) => {
-        return mapObject(eventBuilders, ({ config }, key) => {
-          if (!config.authPolicy) {
-            throw new Error(`missing policy definition for ${String(key)} event`);
-          }
-          if (!config.construct && config.operation === 'create') {
-            throw new Error(`missing constructor definition for ${String(key)} event`);
-          }
-          if (!config.reduce && config.operation === 'update') {
-            throw new Error(`missing reducer definition for ${String(key)} event`);
-          }
-          if (config.eventType === undefined) {
-            config.eventType = `${aggregateType}.${key}`;
-          }
-          return config;
-        });
-      };
-
-      const aggBuilder: AggregateConfigBuilder<U, A, any, any> = {
+    const event = <O extends Operation>(operation: O) => {
+      // @ts-ignore -- we define action functions for each type of operation and throw an error if mismatched
+      const eventBuilder: AggregateEventConfigBuilder<U, A, O, T, any, any> = {
         config: {
-          aggregateType: aggregateType,
-          createId: options?.createId || ctx.createId,
-          aggregateEvents: {},
-          defaultAuthPolicy: ctx.defaultPolicy,
-        } as AggregateConfig<U, A, any, any>,
-        schema: (schema, schemaOptions) => {
-          if (aggBuilder.config.aggregateSchema) throw new Error('Schema already set');
-          aggBuilder.config.aggregateSchema = schema;
-          if (schemaOptions?.createDefaultEvents) {
-            if (Object.keys(aggBuilder.config.aggregateEvents).length > 0) {
-              throw new Error('Events already set');
-            }
-            aggBuilder.config.aggregateEvents = parseEventsConfig({
-              create: event('create')
-                .payload(schema)
-                .constructor((payload) => payload),
-              update: event('update')
-                // @ts-ignore -- zod can't infer that because S is an object ZodSchema<S> must be a ZodObject
-                .payload(schema.partial() as ZodSchema<any>)
-                .reducer((state, payload) => ({ ...state, ...payload })),
-              delete: event('delete').payload(z.undefined()),
-            });
-          }
-          return aggBuilder;
+          aggregateType,
+          operation,
+          authPolicy: defaultPolicy,
+          payloadSchema: operation === 'delete' ? z.undefined() : undefined,
+        },
+        type: (type) => {
+          eventBuilder.config.eventType = type;
+          return eventBuilder;
+        },
+        payload: <Payload>(schema: ZodSchema<Payload>) => {
+          eventBuilder.config.payloadSchema = schema;
+          return eventBuilder;
         },
         policy: (policy) => {
-          if (
-            aggBuilder.config.defaultAuthPolicy &&
-            aggBuilder.config.defaultAuthPolicy !== ctx.defaultPolicy
-          ) {
-            throw new Error('Policy already set');
+          eventBuilder.config.authPolicy = policy;
+          return eventBuilder;
+        },
+        constructor: (constructor) => {
+          // istanbul ignore next
+          if (eventBuilder.config.operation !== 'create') {
+            throw new Error('Constructor is only valid for create operations');
           }
-          aggBuilder.config.defaultAuthPolicy = policy;
-          defaultPolicy = policy;
-          return aggBuilder;
+          eventBuilder.config.construct = constructor;
+          return eventBuilder;
         },
-        repository: (repository) => {
-          if (aggBuilder.config.aggregateRepository) throw new Error('Repository already set');
-          aggBuilder.config.aggregateRepository = repository;
-          return aggBuilder;
+        reducer: (reducer) => {
+          // istanbul ignore next
+          if (eventBuilder.config.operation !== 'update') {
+            throw new Error('Reducer is only valid for update operations');
+          }
+          eventBuilder.config.reduce = reducer;
+          return eventBuilder;
         },
-        events: (maker) => {
+        destructor: (destructor) => {
+          // istanbul ignore next
+          if (eventBuilder.config.operation !== 'delete') {
+            throw new Error('Destructor is only valid for delete operations');
+          }
+          eventBuilder.config.destruct = destructor;
+          return eventBuilder;
+        },
+      };
+      return eventBuilder;
+    };
+
+    // extract config from builder functions and throws an error if any configuration is missing
+    const parseEventsConfig = (eventBuilders: {
+      [fn: string]: { config: AggregateEventConfigBuilder<U, A, any, any, any, any>['config'] };
+    }) => {
+      return mapObject(eventBuilders, ({ config }, key) => {
+        if (!config.authPolicy) {
+          throw new Error(`missing policy definition for ${String(key)} event`);
+        }
+        if (!config.construct && config.operation === 'create') {
+          throw new Error(`missing constructor definition for ${String(key)} event`);
+        }
+        if (!config.reduce && config.operation === 'update') {
+          throw new Error(`missing reducer definition for ${String(key)} event`);
+        }
+        if (config.eventType === undefined) {
+          config.eventType = `${aggregateType}.${key}`;
+        }
+        return config;
+      });
+    };
+
+    const aggBuilder: AggregateConfigBuilder<U, A, any, any, any> = {
+      config: {
+        aggregateType: aggregateType,
+        createId: options?.createId || ctx.createId,
+        aggregateEvents: {},
+        defaultAuthPolicy: ctx.defaultPolicy,
+      } as AggregateConfig<U, A, any, any, any>,
+      schema: (schema, schemaOptions) => {
+        if (aggBuilder.config.aggregateSchema) throw new Error('Schema already set');
+        aggBuilder.config.aggregateSchema = schema;
+        if (schemaOptions?.createDefaultEvents) {
           if (Object.keys(aggBuilder.config.aggregateEvents).length > 0) {
             throw new Error('Events already set');
           }
-          aggBuilder.config.aggregateEvents = parseEventsConfig(maker(event));
-          return aggBuilder;
-        },
+          aggBuilder.config.aggregateEvents = parseEventsConfig({
+            create: event('create')
+              .payload(schema)
+              .constructor((payload) => payload),
+            update: event('update')
+              // @ts-ignore -- zod can't infer that because S is an object ZodSchema<S> must be a ZodObject
+              .payload(schema.partial() as ZodSchema<any>)
+              .reducer((state, payload) => ({ ...state, ...payload })),
+            delete: event('delete').payload(z.undefined()),
+          });
+        }
+        return aggBuilder;
+      },
+      policy: (policy) => {
+        if (
+          aggBuilder.config.defaultAuthPolicy &&
+          aggBuilder.config.defaultAuthPolicy !== ctx.defaultPolicy
+        ) {
+          throw new Error('Policy already set');
+        }
+        aggBuilder.config.defaultAuthPolicy = policy;
+        defaultPolicy = policy;
+        return aggBuilder;
+      },
+      repository: (repository) => {
+        if (aggBuilder.config.aggregateRepository) throw new Error('Repository already set');
+        aggBuilder.config.aggregateRepository = repository;
+        return aggBuilder;
+      },
+      events: (maker) => {
+        if (Object.keys(aggBuilder.config.aggregateEvents).length > 0) {
+          throw new Error('Events already set');
+        }
+        aggBuilder.config.aggregateEvents = parseEventsConfig(maker(event));
+        return aggBuilder;
+      },
+      commands: (maker) => {
+        if (aggBuilder.config.aggregateCommandMaker) throw new Error('Commands already set');
+        aggBuilder.config.aggregateCommandMaker = maker;
+        return aggBuilder;
+      },
+    };
+    if (options?.register) {
+      const { register } = options;
+      // @ts-ignore -- we cast aggBuilder later to the correct type
+      aggBuilder.register = () => {
+        return register(aggBuilder.config);
       };
-      if (options?.register) {
-        const { register } = options;
-        // @ts-ignore -- we cast aggBuilder later to the correct type
-        aggBuilder.register = () => {
-          return register(aggBuilder.config);
-        };
-      }
+    }
 
-      return aggBuilder as AggregateConfigBuilder<
-        U,
-        A,
-        BaseState,
-        {},
-        R extends undefined ? false : true
-      >;
-    },
+    return aggBuilder as AggregateConfigBuilder<
+      U,
+      A,
+      BaseState,
+      {},
+      () => {},
+      R extends undefined ? false : true
+    >;
   };
+  return { aggregate };
 };
 
 /** Extract the union of event types from an aggregate config */
 export type AggregateEventTypeFromConfig<
-  C extends {
+  E extends {
     aggregateEvents: {
       [fn: string]: AggregateEventConfig<any, any, any, any, any, any>;
     };
   }
 > = {
-  [F in keyof C['aggregateEvents']]: C['aggregateEvents'][F] extends AggregateEventConfig<
+  [F in keyof E['aggregateEvents']]: E['aggregateEvents'][F] extends AggregateEventConfig<
     any,
     infer A,
     infer O,
@@ -430,4 +464,4 @@ export type AggregateEventTypeFromConfig<
   >
     ? AggregateEvent<A, O, T, P>
     : never;
-}[keyof C['aggregateEvents']];
+}[keyof E['aggregateEvents']];

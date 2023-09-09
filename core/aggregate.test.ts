@@ -28,6 +28,16 @@ describe('create aggregate config', () => {
     expect(config.aggregateSchema).toBe(profileSchema);
   });
 
+  it('throws error if trying to overwrite schema definition', () => {
+    // Given a schema is already defined
+    const base = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
+    // When trying to overwrite the schema
+    expect(
+      () => base.schema(z.object({ name: z.string().min(2) }))
+      // Then an error should be thrown
+    ).toThrowError('Schema already set');
+  });
+
   it('should generate aggregate config with repository', async () => {
     // Given a repository
     const profilesRepository = createFakeAggregateRepository<{ name: string } & BaseState>();
@@ -40,6 +50,16 @@ describe('create aggregate config', () => {
     expect(config.aggregateRepository).toBe(profilesRepository);
     config.aggregateRepository?.create(createAggregateObject({ id: 'p1', name: 'tester' }));
     expect(await profilesRepository.getOne('p1')).toMatchObject({ name: 'tester', version: 1 });
+  });
+
+  it('throws error if trying to overwrite repository definition', () => {
+    // Given a repository is already defined
+    const base = ctx.aggregate('profile').repository(createFakeAggregateRepository<BaseState>());
+    // When trying to overwrite the repository
+    expect(
+      () => base.repository(createFakeAggregateRepository<BaseState>())
+      // Then an error should be thrown
+    ).toThrowError('Repository already set');
   });
 
   it('should generate aggregate config with events', () => {
@@ -136,6 +156,16 @@ describe('create aggregate config', () => {
     config.aggregateEvents.delete.authPolicy({ id: 'tester', roles: [] }, {} as any);
     // And the default policy should be set on the config
     expect(config.defaultAuthPolicy).toBe(aggregatePolicy);
+  });
+
+  it('throws error if trying to overwrite default auth policy definition', () => {
+    // Given a default auth policy is already defined
+    const base = ctx.aggregate('profile').policy(() => true);
+    // When trying to overwrite the default auth policy
+    expect(
+      () => base.policy(() => true)
+      // Then an error should be thrown
+    ).toThrowError('Policy already set');
   });
 
   it('can define default policy on context', () => {
@@ -252,34 +282,33 @@ describe('create aggregate config', () => {
     ).toThrowError('Events already set');
   });
 
-  it('throws error if trying to overwrite schema definition', () => {
-    // Given a schema is already defined
-    const base = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
-    // When trying to overwrite the schema
-    expect(
-      () => base.schema(z.object({ name: z.string().min(2) }))
-      // Then an error should be thrown
-    ).toThrowError('Schema already set');
+  it('can define commands', () => {
+    // Given a command maker function
+    const commandMaker = jest.fn(() => ({
+      command: () => {},
+    }));
+    // When a new config is constructed with a command
+    const { config } = ctx
+      .aggregate('profile')
+      .schema(z.object({ name: z.string().min(2) }))
+      .events((event) => ({
+        create: event('create')
+          .payload(z.object({ name: z.string().min(2) }))
+          .constructor((state) => state),
+      }))
+      .commands(commandMaker);
+    // Then the config should have the correct command maker
+    expect(config.aggregateCommandMaker).toBe(commandMaker);
   });
 
-  it('throws error if trying to overwrite repository definition', () => {
-    // Given a repository is already defined
-    const base = ctx.aggregate('profile').repository(createFakeAggregateRepository<BaseState>());
-    // When trying to overwrite the repository
+  it('throws error if trying to overwrite command maker definition', () => {
+    // Given a command maker is already defined
+    const base = ctx.aggregate('profile').commands(() => ({}));
+    // When trying to overwrite the command maker
     expect(
-      () => base.repository(createFakeAggregateRepository<BaseState>())
+      () => base.commands(() => ({}))
       // Then an error should be thrown
-    ).toThrowError('Repository already set');
-  });
-
-  it('throws error if trying to overwrite default auth policy definition', () => {
-    // Given a default auth policy is already defined
-    const base = ctx.aggregate('profile').policy(() => true);
-    // When trying to overwrite the default auth policy
-    expect(
-      () => base.policy(() => true)
-      // Then an error should be thrown
-    ).toThrowError('Policy already set');
+    ).toThrowError('Commands already set');
   });
 
   it('can pass register function to aggregate config', () => {
