@@ -80,10 +80,10 @@ describe('create broker', () => {
       eventsRepository,
     });
     // When an aggregate store is created
-    const { config } = broker
+    const aggregate = broker
       .aggregate('profile')
       .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true });
-    const store = broker.register(config);
+    const store = broker.register(aggregate);
     // Then it uses the correct auth adapter
     const id = await store.create({ name: 'test' });
     expect(authAdapter.getAccount).toHaveBeenCalled();

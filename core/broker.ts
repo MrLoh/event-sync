@@ -40,7 +40,7 @@ export type Broker<U extends AccountInterface> = {
     E extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
     C extends AggregateCommandsMaker<U, A, S, E>
   >(
-    agg: AggregateConfig<U, A, S, E, C>
+    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> }
   ) => AggregateStore<U, A, S, E, C>;
   /**
    * Create an aggregate with the broker as a context
@@ -184,10 +184,11 @@ export const createBroker = <U extends AccountInterface>({
     E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
     C extends AggregateCommandsMaker<U, A, S, E>
   >(
-    agg: AggregateConfig<U, A, S, E, C>
+    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> }
   ) => {
     const store = createStore(agg, { authAdapter, createId, eventsRepository, eventBus });
-    stores[agg.aggregateType] = store;
+    const aggregateType = 'config' in agg ? agg.config.aggregateType : agg.aggregateType;
+    stores[aggregateType] = store;
     return store;
   };
 

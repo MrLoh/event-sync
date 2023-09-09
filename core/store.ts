@@ -87,7 +87,7 @@ export const createStore = <
   E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
   C extends AggregateCommandsMaker<U, A, S, E>
 >(
-  agg: AggregateConfig<U, A, S, E, C>,
+  aggBuilderOrConfig: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> },
   ctx: {
     authAdapter: AuthAdapter<U>;
     createId: () => string;
@@ -95,6 +95,8 @@ export const createStore = <
     eventBus: EventBus;
   }
 ): AggregateStore<U, A, S, E, C> => {
+  const agg = 'config' in aggBuilderOrConfig ? aggBuilderOrConfig.config : aggBuilderOrConfig;
+
   // setup aggregate state as a BehaviorSubject
   const collection$ = new BehaviorSubject<{ [id: string]: S }>({});
 
