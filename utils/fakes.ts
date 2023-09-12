@@ -195,11 +195,10 @@ export const createEvent = <
     operation?: O;
     payload?: P;
     aggregateId?: string;
-    prevId?: string;
     recordedAt?: R;
     createdBy?: U;
     createdOn?: string;
-  } = {}
+  } & (O extends 'create' ? { prevId?: undefined } : { prevId: string }) = {} as any
 ): AggregateEvent<A, O, T, P> &
   (R extends Date ? { recordedAt: Date } : {}) &
   (U extends string ? { recordedBy: string } : {}) =>
@@ -215,7 +214,7 @@ export const createEvent = <
     createdBy: createdBy ?? createId(),
     createdOn: createdOn ?? createId(),
     recordedAt: recordedAt,
-    prevId,
+    prevId: prevId as O extends 'create' ? undefined : string,
   } satisfies AggregateEvent<A, O, T, P>);
 
 /**

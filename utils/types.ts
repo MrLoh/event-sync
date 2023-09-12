@@ -22,7 +22,7 @@ export type AggregateEvent<A extends string, O extends Operation, T extends stri
   /** The id of the device that dispatched the event */
   createdOn: string;
   /** The id of the previous event */
-  prevId?: string;
+  prevId: O extends 'create' ? undefined : string;
   /** The date-time the event was recorded at on the server */
   recordedAt?: Date;
 };

@@ -370,7 +370,7 @@ describe('createEvent', () => {
 
   it('can create an event with a custom operation', () => {
     // When an event is created with a custom operation
-    const event = createEvent('TEST', 'TEST', { operation: 'update' });
+    const event = createEvent('TEST', 'TEST', { operation: 'update', prevId: 'event1' });
     // Then the event has the custom operation
     expect(event).toHaveProperty('operation', 'update');
   });
@@ -384,7 +384,7 @@ describe('createEvent', () => {
 
   it('can create an event with a previous event id', () => {
     // When an event is created with a custom previous event id
-    const event = createEvent('TEST', 'TEST', { prevId: 'event1' });
+    const event = createEvent('TEST', 'TEST', { operation: 'delete', prevId: 'event1' });
     // Then the event has the custom previous event id
     expect(event).toHaveProperty('prevId', 'event1');
   });
