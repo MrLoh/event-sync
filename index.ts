@@ -1,4 +1,8 @@
-export { createContext, type AggregateEventTypeFromConfig } from './core/aggregate';
+export {
+  createContext,
+  type AggregateEventTypeFromConfig,
+  type AggregateStateTypeFromConfig,
+} from './core/aggregate';
 export {
   createStore,
   baseStateSchema,

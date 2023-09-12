@@ -447,14 +447,8 @@ export const createContext = <U extends AccountInterface>(
 };
 
 /** Extract the union of event types from an aggregate config */
-export type AggregateEventTypeFromConfig<
-  E extends {
-    aggregateEvents: {
-      [fn: string]: AggregateEventConfig<any, any, any, any, any, any>;
-    };
-  }
-> = {
-  [F in keyof E['aggregateEvents']]: E['aggregateEvents'][F] extends AggregateEventConfig<
+export type AggregateEventTypeFromConfig<C extends AggregateConfig<any, any, any, any, any>> = {
+  [F in keyof C['aggregateEvents']]: C['aggregateEvents'][F] extends AggregateEventConfig<
     any,
     infer A,
     infer O,
@@ -464,4 +458,10 @@ export type AggregateEventTypeFromConfig<
   >
     ? AggregateEvent<A, O, T, P>
     : never;
-}[keyof E['aggregateEvents']];
+}[keyof C['aggregateEvents']];
+
+/** Extract the aggregate state type from an aggregate config */
+export type AggregateStateTypeFromConfig<C extends AggregateConfig<any, any, any, any, any>> =
+  C['aggregateSchema'] extends undefined
+    ? unknown
+    : z.infer<Exclude<C['aggregateSchema'], undefined>> & BaseState;
