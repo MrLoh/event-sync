@@ -201,7 +201,7 @@ export const createEvent = <
   } & (O extends 'create' ? { prevId?: undefined } : { prevId: string }) = {} as any
 ): AggregateEvent<A, O, T, P> &
   (R extends Date ? { recordedAt: Date } : {}) &
-  (U extends string ? { recordedBy: string } : {}) =>
+  (U extends string ? { createdBy: string } : {}) =>
   // @ts-ignore -- typescript doesn't understand the ternary type
   ({
     id: createId(),
@@ -215,7 +215,7 @@ export const createEvent = <
     createdOn: createdOn ?? createId(),
     recordedAt: recordedAt,
     prevId: prevId as O extends 'create' ? undefined : string,
-  } satisfies AggregateEvent<A, O, T, P>);
+  });
 
 /**
  * Creates a fake object that implements the ConnectionStatusAdapter interface plus a set method

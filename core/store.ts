@@ -57,7 +57,7 @@ export type AggregateStore<
     initialized: boolean;
   };
 
-export const baseStateSchema = z.object({
+export const baseStateSchema: ZodSchema<BaseState> = z.object({
   id: z.string(),
   createdBy: z.string().optional(),
   createdOn: z.string(),
@@ -66,7 +66,7 @@ export const baseStateSchema = z.object({
   updatedAt: z.date(),
   version: z.number(),
   lastRecordedAt: z.date().optional(),
-}) satisfies ZodSchema<BaseState>;
+});
 
 /** will JSON stringify and parse to for example remove undefined values */
 export const ensureEncodingSafety = <O extends Record<string, any>>(obj: O): O => {
@@ -173,7 +173,7 @@ export const createStore = <
       case 'update': {
         const reducer = eventByEventType[event.type].reduce;
         const currState = collection$.value[event.aggregateId];
-        const nextState = stateSchema.parse({
+        const nextState: S = stateSchema.parse({
           ...currState,
           ...reducer!(currState, event.payload),
           id: event.aggregateId,
@@ -184,7 +184,7 @@ export const createStore = <
           lastEventId: event.id,
           lastRecordedAt: event.recordedAt ?? currState.lastRecordedAt,
           version: currState.version + 1,
-        } satisfies S);
+        });
         collection$.next({ ...currStoreState, [event.aggregateId]: nextState });
         return await persistEventAndAggregate(nextState);
       }
