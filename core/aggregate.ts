@@ -144,17 +144,12 @@ export type AggregateConfigBuilder<
     U,
     A,
     State & BaseState,
+    // @ts-ignore -- they correct type if not default events are created is set with the events setter
     SchemaOptions['createDefaultEvents'] extends true
       ? DefaultAggregateEventsConfig<U, A, State & BaseState>
-      : { [fn: string]: AggregateEventConfig<U, A, any, any, BaseState & State, any> },
-    AggregateCommandsMaker<
-      U,
-      A,
-      State & BaseState,
-      SchemaOptions['createDefaultEvents'] extends true
-        ? DefaultAggregateEventsConfig<U, A, State & BaseState>
-        : { [fn: string]: AggregateEventConfig<U, A, any, any, BaseState & State, any> }
-    >,
+      : E,
+    // @ts-ignore -- they correct type is set later with the commands setter
+    C,
     registerable
   >;
   /**
