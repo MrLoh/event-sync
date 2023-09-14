@@ -1,5 +1,5 @@
 import { ZodError, z } from 'zod';
-import { createStore } from './store';
+import { createStore, type AggregateStore } from './store';
 import { createEventBus } from './event-bus';
 import { ConflictError, InvalidInputError, UnauthorizedError } from '../utils/errors';
 import {
@@ -23,17 +23,19 @@ describe('create store', () => {
   type Profile = z.infer<typeof profileSchema>;
 
   const setup = <
-    C extends AggregateCommandsMaker<
-      Account,
-      'PROFILE',
-      Profile & BaseState,
-      DefaultAggregateEventsConfig<Account, 'PROFILE', Profile & BaseState>
-    >
-  >(overwrites?: {
-    aggregateRepository?: AggregateRepository<Profile & BaseState>;
-    authPolicy?: (account: Account | null) => boolean;
-    aggregateCommandMaker?: C;
-  }) => {
+    O extends {
+      aggregateRepository?: AggregateRepository<Profile & BaseState>;
+      authPolicy?: (account: Account | null) => boolean;
+      aggregateCommandMaker?: AggregateCommandsMaker<
+        Account,
+        'PROFILE',
+        Profile & BaseState,
+        DefaultAggregateEventsConfig<Account, 'PROFILE', Profile & BaseState>
+      >;
+    }
+  >(
+    overwrites?: O
+  ) => {
     const aggregateRepository =
       overwrites?.aggregateRepository ?? createFakeAggregateRepository<Profile & BaseState>();
     const context = {
@@ -82,7 +84,20 @@ describe('create store', () => {
         aggregateRepository,
       },
       context
-    );
+    ) as AggregateStore<
+      Account,
+      'PROFILE',
+      Profile & BaseState,
+      DefaultAggregateEventsConfig<Account, 'PROFILE', Profile & BaseState>,
+      O['aggregateCommandMaker'] extends AggregateCommandsMaker<
+        Account,
+        'PROFILE',
+        Profile & BaseState,
+        DefaultAggregateEventsConfig<Account, 'PROFILE', Profile & BaseState>
+      >
+        ? O['aggregateCommandMaker']
+        : () => {}
+    >;
     return { context, store, aggregateRepository };
   };
 
