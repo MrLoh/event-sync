@@ -102,7 +102,12 @@ export const createFakeEventServerAdapter = (
       }
       const recordedAt = new Date();
       this.recordedEvents.push({ ...event, recordedAt });
-      return { eventId: event.id, recordedAt, recordedBy: account.id };
+      return {
+        eventId: event.id,
+        recordedAt,
+        recordedBy: account.id,
+        aggregateId: event.aggregateId,
+      };
     },
     async fetch(lastRecordedEventId: string | null): Promise<AnyAggregateEvent[]> {
       const lastEvent = this.recordedEvents.find((e) => e.id === lastRecordedEventId);

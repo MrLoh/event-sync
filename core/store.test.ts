@@ -402,16 +402,23 @@ describe('create store', () => {
 
   it('can mark aggregate as recorded', async () => {
     // Given a store with an existing profile that was created without an account
-    const { store, context } = setup({ authPolicy: () => true });
+    const { store, context, aggregateRepository } = setup({ authPolicy: () => true });
     jest.spyOn(context.authAdapter, 'getAccount').mockImplementation(async () => null);
     const id = await store.create({ name: 'tester' });
-    expect(store.state[id]).toMatchObject({ createdBy: undefined });
+    expect(store.state[id].createdBy).toBeUndefined();
+    expect(context.eventsRepository.events[0].recordedAt).toBeUndefined();
+    expect(context.eventsRepository.events[0].createdBy).toBeUndefined();
     // And a subscriber to the store
     const subscriber = jest.fn();
     store.subscribe(subscriber);
     // When the aggregate is marked as recorded
     const accountId = createId();
-    await store.markRecorded(id, new Date(), accountId);
+    await store.markRecorded({
+      eventId: store.state[id].lastEventId,
+      aggregateId: id,
+      recordedAt: new Date(),
+      recordedBy: accountId,
+    });
     // Then the state is marked as recorded
     expect(store.state[id]).toMatchObject({ lastRecordedAt: expect.any(Date) });
     // And the created by is set to the account id
@@ -422,5 +429,15 @@ describe('create store', () => {
         [id]: expect.objectContaining({ createdBy: accountId, lastRecordedAt: expect.any(Date) }),
       })
     );
+    // And the updated state is persisted to the repository
+    expect(await aggregateRepository.getOne(id)).toMatchObject({
+      createdBy: accountId,
+      lastRecordedAt: expect.any(Date),
+    });
+    // And the event is marked as recorded in the repository
+    expect(context.eventsRepository.events[0]).toMatchObject({
+      recordedAt: expect.any(Date),
+      createdBy: accountId,
+    });
   });
 });

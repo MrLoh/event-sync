@@ -119,10 +119,7 @@ export const createBroker = <U extends AccountInterface>({
     if (!eventServerAdapter || !account) return;
     // TODO: make errors from event server adapter more specific
     const { val } = await tryCatch(() => eventServerAdapter.record(event));
-    if (val && eventsRepository) {
-      await eventsRepository.markRecorded(val.eventId, val.recordedAt, val.recordedBy);
-      stores[event.aggregateType]?.markRecorded(event.aggregateId, val.recordedAt, val.recordedBy);
-    }
+    if (val) stores[event.aggregateType].markRecorded(val);
   };
 
   // TODO: device way to guarantee at least once delivery of events to the store to ensure the state
@@ -177,7 +174,15 @@ export const createBroker = <U extends AccountInterface>({
   };
   let unsubscribe = initialize();
 
-  const stores: { [aggregateType: string]: AggregateStore<U, any, any, any, any> } = {};
+  const stores: {
+    [aggregateType: string]: AggregateStore<
+      U,
+      string,
+      any,
+      any,
+      AggregateCommandsMaker<U, string, any, any>
+    >;
+  } = {};
   const register = <
     A extends string,
     S extends BaseState,

@@ -283,7 +283,7 @@ export type EventServerAdapter = {
    */
   record: (
     event: AnyAggregateEvent
-  ) => Promise<{ eventId: string; recordedAt: Date; recordedBy: string }>;
+  ) => Promise<{ eventId: string; aggregateId: string; recordedAt: Date; recordedBy: string }>;
   /**
    * Fetch new events since lastRecordedEventId from the server
    *

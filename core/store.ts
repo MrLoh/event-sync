@@ -37,8 +37,15 @@ export type AggregateStore<
     subscribe: (fn: (state: { [id: string]: S }) => void) => () => void;
     /**
      * Mark an aggregate as recorded to set recorded by if undefined and last recorded by fields
+     *
+     * @param res the recording result from the event server
      */
-    markRecorded: (aggregateId: string, recordedAt: Date, recordedBy: string) => Promise<void>;
+    markRecorded: (res: {
+      eventId: string;
+      aggregateId: string;
+      recordedAt: Date;
+      recordedBy: string;
+    }) => Promise<void>;
     /**
      * Reset state of the aggregates to the initial state and delete all entries from the aggregate
      */
@@ -305,7 +312,17 @@ export const createStore = <
       if (agg.aggregateRepository) await agg.aggregateRepository.deleteAll();
       collection$.next({});
     },
-    markRecorded: async (aggregateId: string, recordedAt: Date, recordedBy: string) => {
+    markRecorded: async ({
+      eventId,
+      aggregateId,
+      recordedAt,
+      recordedBy,
+    }: {
+      eventId: string;
+      aggregateId: string;
+      recordedAt: Date;
+      recordedBy: string;
+    }) => {
       await initialization;
       const currState = collection$.value[aggregateId];
       if (!currState) throw new NotFoundError(`Aggregate with id ${aggregateId} not found`);
@@ -317,6 +334,9 @@ export const createStore = <
       collection$.next({ ...collection$.value, [aggregateId]: nextState });
       if (agg.aggregateRepository) {
         await agg.aggregateRepository.update(aggregateId, nextState);
+      }
+      if (ctx.eventsRepository) {
+        await ctx.eventsRepository.markRecorded(eventId, recordedAt, recordedBy);
       }
     },
     initialize: () => {
