@@ -61,11 +61,11 @@ export const createFakeEventsRepository = (): EventsRepository & {
     deleteAll: async () => {
       events = [];
     },
-    markRecorded: async (eventId: string, recordedAt: Date, recordedBy: string) => {
+    markRecorded: async (eventId: string, update: { recordedAt: Date; createdBy: string }) => {
       const event = events.find((e) => e.id === eventId);
       if (!event) throw new NotFoundError(`Event ${eventId} not found`);
-      event.recordedAt = recordedAt;
-      event.createdBy = recordedBy;
+      event.recordedAt = update.recordedAt;
+      event.createdBy = update.createdBy;
     },
     getUnrecorded: async () => events.filter((e) => !e.recordedAt),
     getLastRecordedEvent: async () => {
@@ -78,7 +78,7 @@ export const createFakeEventsRepository = (): EventsRepository & {
   };
 };
 
-type AnyRecordedAggregateEvent = AnyAggregateEvent & { recordedAt: Date };
+type AnyRecordedAggregateEvent = AnyAggregateEvent & { recordedAt: Date; createdBy: string };
 /**
  * Creates a fake event server adapter for testing purposes.
  *
@@ -97,17 +97,18 @@ export const createFakeEventServerAdapter = (
     async record(event: AnyAggregateEvent) {
       const account = await authAdapter.getAccount();
       if (!account) throw new UnauthorizedError('Account not found');
-      if (event.createdBy && account.id !== event.createdBy) {
+      if (event.createdBy && event.createdBy !== account.id) {
         throw new UnauthorizedError('Event created by different account');
       }
-      const recordedAt = new Date();
-      this.recordedEvents.push({ ...event, recordedAt });
-      return {
-        eventId: event.id,
-        recordedAt,
-        recordedBy: account.id,
-        aggregateId: event.aggregateId,
+      const duplicateEvent = this.recordedEvents.find((e) => e.id === event.id);
+      if (duplicateEvent) return duplicateEvent;
+      const recordedEvent = {
+        ...event,
+        recordedAt: new Date(),
+        createdBy: event.createdBy ?? account.id,
       };
+      this.recordedEvents.push(recordedEvent);
+      return recordedEvent;
     },
     async fetch(lastRecordedEventId: string | null): Promise<AnyAggregateEvent[]> {
       const lastEvent = this.recordedEvents.find((e) => e.id === lastRecordedEventId);

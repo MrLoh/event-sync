@@ -1,13 +1,21 @@
 import { ZodError, z } from 'zod';
 import { createStore, type AggregateStore } from './store';
 import { createEventBus } from './event-bus';
-import { ConflictError, InvalidInputError, UnauthorizedError } from '../utils/errors';
+import {
+  ConflictError,
+  InvalidInputError,
+  NetworkError,
+  NotFoundError,
+  UnauthorizedError,
+} from '../utils/errors';
 import {
   createId,
   createFakeAuthAdapter,
   createFakeAggregateRepository,
   createFakeEventsRepository,
   createAggregateObject,
+  createFakeEventServerAdapter,
+  createEvent,
 } from '../utils/fakes';
 import type {
   AnyAggregateEvent,
@@ -19,6 +27,8 @@ import type {
 import type { Account } from '../utils/fakes';
 
 describe('create store', () => {
+  jest.useFakeTimers({ timerLimit: 100 });
+
   const profileSchema = z.object({ name: z.string().min(2), accountId: z.string().optional() });
   type Profile = z.infer<typeof profileSchema>;
 
@@ -38,11 +48,13 @@ describe('create store', () => {
   ) => {
     const aggregateRepository =
       overwrites?.aggregateRepository ?? createFakeAggregateRepository<Profile & BaseState>();
+    const authAdapter = createFakeAuthAdapter();
     const context = {
-      authAdapter: createFakeAuthAdapter(),
       createId,
-      eventsRepository: createFakeEventsRepository(),
+      authAdapter,
       eventBus: createEventBus(),
+      eventsRepository: createFakeEventsRepository(),
+      eventServerAdapter: createFakeEventServerAdapter(authAdapter),
     };
     const store = createStore(
       {
@@ -226,6 +238,28 @@ describe('create store', () => {
     }
   });
 
+  it('update or delete events fail if aggregate does not exist', async () => {
+    // Given a store
+    const { store, context } = setup();
+    // And a subscriber to the event bus
+    const subscriber = jest.fn();
+    context.eventBus.subscribe(subscriber);
+    // When an update event is called on a non-existent aggregate
+    expect(() => store.update('p1', { name: 'test' })).rejects.toThrowError(
+      // Then an error is thrown
+      new NotFoundError('PROFILE aggregate with id p1 not found')
+    );
+    // When a delete event is called on a non-existent aggregate
+    expect(() => store.delete('p1')).rejects.toThrowError(
+      // Then an error is thrown as well
+      new NotFoundError('PROFILE aggregate with id p1 not found')
+    );
+    // And no event is dispatched
+    expect(subscriber).not.toHaveBeenCalled();
+    // And the state is not updated
+    expect(store.state).toEqual({});
+  });
+
   it('event persists state in repository', async () => {
     // Given a store with a repository
     const { store, aggregateRepository } = setup();
@@ -233,6 +267,76 @@ describe('create store', () => {
     const id = await store.create({ name: 'test' });
     // Then the state is persisted in the repository
     expect(await aggregateRepository.getOne(id)).toMatchObject({ id, name: 'test' });
+  });
+
+  it('event is recorded on event server', async () => {
+    // Given a store with an event server adapter
+    const { store, context } = setup();
+    jest.spyOn(context.eventServerAdapter, 'record');
+    // And a subscriber to the state
+    const subscriber = jest.fn();
+    store.subscribe(subscriber);
+    // When a event is called and has time to process
+    const id = await store.create({ name: 'test' });
+    await jest.advanceTimersByTimeAsync(0);
+    // Then the event is recorded on the server
+    expect(context.eventServerAdapter.record).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
+    );
+    expect(context.eventServerAdapter.recordedEvents).toContainEqual(
+      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
+    );
+    // And the state is updated with the last recorded time
+    expect(store.state[id]).toMatchObject({ lastRecordedAt: expect.any(Date) });
+    // And the subscriber is called
+    expect(subscriber).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        [id]: expect.objectContaining({ lastRecordedAt: expect.any(Date) }),
+      })
+    );
+    // And the event is marked as recorded in the repository
+    expect(context.eventsRepository.events[0]).toMatchObject({ recordedAt: expect.any(Date) });
+  });
+
+  it('does not throw if event server is offline', async () => {
+    // Given a store with an event server adapter
+    const { store, context } = setup();
+    jest.spyOn(context.eventServerAdapter, 'record').mockImplementationOnce(async () => {
+      throw new NetworkError('server is offline');
+    });
+    // When a event is called and has time to process
+    const id = await store.create({ name: 'test' });
+    await jest.advanceTimersByTimeAsync(0);
+    // Then the event is not recorded on the server
+    expect(context.eventServerAdapter.record).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
+    );
+    expect(context.eventServerAdapter.recordedEvents).not.toContainEqual(
+      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
+    );
+    // And the event is not marked as recorded
+    expect(store.state[id].lastRecordedAt).toBeUndefined();
+    // And the event is not marked as recorded in the repository
+    expect(context.eventsRepository.events[0].recordedAt).toBeUndefined();
+  });
+
+  it('does not try to record event if account is not logged in', async () => {
+    // Given a store with an event server adapter and no account
+    const { store, context } = setup({ authPolicy: () => true });
+    jest.spyOn(context.authAdapter, 'getAccount').mockImplementation(async () => null);
+    jest.spyOn(context.eventServerAdapter, 'record');
+    // When a event is called and has time to process
+    const id = await store.create({ name: 'test' });
+    await jest.advanceTimersByTimeAsync(0);
+    // Then the event is not recorded on the server
+    expect(context.eventServerAdapter.record).not.toHaveBeenCalled();
+    expect(context.eventServerAdapter.recordedEvents).not.toContainEqual(
+      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
+    );
+    // And the event is not marked as recorded
+    expect(store.state[id].lastRecordedAt).toBeUndefined();
+    // And the event is not marked as recorded in the repository
+    expect(context.eventsRepository.events[0].recordedAt).toBeUndefined();
   });
 
   it('event persists event in repository', async () => {
@@ -267,6 +371,8 @@ describe('create store', () => {
     // Given a store with an existing profile
     const { store, aggregateRepository } = setup();
     const id = await store.create({ name: 'tester' });
+    expect(store.state[id]).toMatchObject({ id, name: 'tester' });
+    await jest.advanceTimersByTimeAsync(0);
     // When a delete event is called
     await store.delete(id);
     // Then the state is deleted
@@ -340,6 +446,8 @@ describe('create store', () => {
     const { store, aggregateRepository } = setup();
     // Given a profile was created in the repository
     await store.create({ name: 'tester' });
+    // And all events have finished processing
+    await jest.advanceTimersByTimeAsync(0);
     // When the store is reset
     await store.reset();
     // Then the state is reset
@@ -365,7 +473,11 @@ describe('create store', () => {
             },
           },
         },
-        { authAdapter: createFakeAuthAdapter(), createId, eventBus: createEventBus() }
+        {
+          createId,
+          authAdapter: createFakeAuthAdapter(),
+          eventBus: createEventBus(),
+        }
       )
     ).toThrowError('events cannot have the following names');
   });
@@ -379,7 +491,11 @@ describe('create store', () => {
           aggregateEvents: {},
           aggregateCommandMaker: () => ({ initialize: () => {} }),
         },
-        { authAdapter: createFakeAuthAdapter(), createId, eventBus: createEventBus() }
+        {
+          createId,
+          authAdapter: createFakeAuthAdapter(),
+          eventBus: createEventBus(),
+        }
       )
     ).toThrowError('commands cannot have the following names');
   });
@@ -388,13 +504,14 @@ describe('create store', () => {
     // Given a store with an existing profile
     const { store, context, aggregateRepository } = setup();
     const oldProfileId = await store.create({ name: 'tester' });
-    // Given the event repository throws an error on insert
+    // And an event repository throws an error on insert
     jest.spyOn(context.eventsRepository, 'create').mockImplementationOnce(async () => {
       throw new Error('insert failed');
     });
     // And a subscriber to the store
     const subscriber = jest.fn();
     store.subscribe(subscriber);
+    await jest.advanceTimersByTimeAsync(0);
     subscriber.mockClear();
     // And a termination handler to the event bus
     const handleError = jest.fn();
@@ -415,44 +532,116 @@ describe('create store', () => {
     );
   });
 
-  it('can mark aggregate as recorded', async () => {
-    // Given a store with an existing profile that was created without an account
+  it('can record event', async () => {
+    // Given a store with an event server adapter
     const { store, context, aggregateRepository } = setup({ authPolicy: () => true });
+    jest.spyOn(context.eventServerAdapter, 'record');
+    // And an existing profile that was created without an account
     jest.spyOn(context.authAdapter, 'getAccount').mockImplementation(async () => null);
     const id = await store.create({ name: 'tester' });
+    await jest.advanceTimersByTimeAsync(0);
     expect(store.state[id].createdBy).toBeUndefined();
     expect(context.eventsRepository.events[0].recordedAt).toBeUndefined();
     expect(context.eventsRepository.events[0].createdBy).toBeUndefined();
     // And a subscriber to the store
     const subscriber = jest.fn();
     store.subscribe(subscriber);
-    // When the aggregate is marked as recorded
-    const accountId = createId();
-    await store.markRecorded({
-      eventId: store.state[id].lastEventId,
-      aggregateId: id,
-      recordedAt: new Date(),
-      recordedBy: accountId,
-    });
-    // Then the state is marked as recorded
+    // When an account is logged in
+    jest.spyOn(context.authAdapter, 'getAccount').mockReset();
+    const account = await context.authAdapter.getAccount();
+    // And the event is recorded
+    await store.recordEvent(context.eventsRepository.events[0]);
+    // Then the server is called to record the event
+    expect(context.eventServerAdapter.record).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'tester' } })
+    );
+    // And the state is marked as recorded
     expect(store.state[id]).toMatchObject({ lastRecordedAt: expect.any(Date) });
     // And the created by is set to the account id
-    expect(store.state[id].createdBy).toBe(accountId);
+    expect(store.state[id].createdBy).toBe(account!.id);
     // And the subscriber is called
     expect(subscriber).toHaveBeenCalledWith(
       expect.objectContaining({
-        [id]: expect.objectContaining({ createdBy: accountId, lastRecordedAt: expect.any(Date) }),
+        [id]: expect.objectContaining({ createdBy: account!.id, lastRecordedAt: expect.any(Date) }),
       })
     );
     // And the updated state is persisted to the repository
     expect(await aggregateRepository.getOne(id)).toMatchObject({
-      createdBy: accountId,
+      createdBy: account!.id,
       lastRecordedAt: expect.any(Date),
     });
     // And the event is marked as recorded in the repository
     expect(context.eventsRepository.events[0]).toMatchObject({
       recordedAt: expect.any(Date),
-      createdBy: accountId,
+      createdBy: account!.id,
     });
+  });
+
+  it('ignores calls to record an event if the event is already recorded', async () => {
+    // Given a store with an event server adapter
+    const { store, context } = setup({ authPolicy: () => true });
+    jest.spyOn(context.eventServerAdapter, 'record');
+    // And an existing event that was recorded
+    store.create({ name: 'tester' });
+    await jest.advanceTimersByTimeAsync(0);
+    const event = context.eventsRepository.events[0];
+    jest.spyOn(context.eventServerAdapter, 'record').mockClear();
+    // When the event is recorded again
+    await store.recordEvent(event);
+    // Then the server is not called to record the event again
+    expect(context.eventServerAdapter.record).not.toHaveBeenCalled();
+  });
+
+  it('throws error when trying to record event for other aggregate', async () => {
+    // Given a store with an event server adapter
+    const { store, context } = setup({ authPolicy: () => true });
+    // And an event for a different aggregate
+    const event = createEvent('OTHER', 'SOMETHING_HAPPENED');
+    // When the event is recorded
+    await expect(() => store.recordEvent(event)).rejects.toThrowError(
+      // Then an error is thrown
+      new Error('PROFILE store cannot record event for OTHER aggregate')
+    );
+    // And the event is not recorded on the server
+    expect(context.eventServerAdapter.recordedEvents).not.toContainEqual(event);
+  });
+
+  it('terminates the event bus when an error is thrown during processing', async () => {
+    // Given an event bus with a termination handler
+    const eventBus = createEventBus();
+    const onTermination = jest.fn();
+    eventBus.onTermination(onTermination);
+    // And a store with an event processor that throws an error
+    const store = createStore(
+      {
+        aggregateType: 'TEST',
+        aggregateEvents: {
+          failing: {
+            aggregateType: 'TEST',
+            eventType: 'WILL_FAIL',
+            operation: 'create' as const,
+            payloadSchema: z.undefined(),
+            authPolicy: () => true,
+            construct: () => {
+              throw new Error('failed');
+            },
+          },
+        },
+      },
+      { createId, authAdapter: createFakeAuthAdapter(), eventBus }
+    );
+    // And a subscriber to the store
+    const subscriber = jest.fn();
+    store.subscribe(subscriber);
+    // When the failing event is called
+    await store.failing();
+    // Then the event bus is terminated
+    expect(eventBus.terminated).toBe(true);
+    // And the termination handler is called with the error
+    expect(onTermination).toHaveBeenCalledWith(new Error('failed'));
+    // And the state is rolled back
+    expect(store.state).toEqual({});
+    // And the subscriber is called
+    expect(subscriber).toHaveBeenCalledWith(expect.objectContaining({}));
   });
 });

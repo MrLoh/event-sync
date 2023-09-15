@@ -43,11 +43,15 @@ export type EventsRepository = {
   /**
    * Mark an event as recorded by the server
    *
+   * @remarks
+   * In case the event was created by an anonymous account, this will set the `createdBy` to the
+   * account id of the account that recorded the event, since an event is only recorded if the
+   * account is logged in. The created by will only be overwritten if it was previously undefined.
+   *
    * @param eventId the id of the event to mark as recorded
-   * @param recordedAt the date-time the event was recorded at
-   * @param recordedBy the id of the account that recorded the event
+   * @param update object containing when the event was recorded and what the created by should be
    */
-  markRecorded: (eventId: string, recordedAt: Date, recordedBy: string) => Promise<void>;
+  markRecorded: (eventId: string, update: { recordedAt: Date; createdBy: string }) => Promise<void>;
   /**
    * Get all unrecorded events
    *
@@ -279,11 +283,11 @@ export type EventServerAdapter = {
    * Send an event to the server to be recorded
    *
    * @param event the event to record
-   * @returns promise of the event id and date-time it was recorded at
+   * @returns promise of the recorded event with updated metadata
    */
   record: (
     event: AnyAggregateEvent
-  ) => Promise<{ eventId: string; aggregateId: string; recordedAt: Date; recordedBy: string }>;
+  ) => Promise<AnyAggregateEvent & { recordedAt: Date; createdBy: string }>;
   /**
    * Fetch new events since lastRecordedEventId from the server
    *

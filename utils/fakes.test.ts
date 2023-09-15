@@ -108,8 +108,8 @@ describe('createFakeEventsRepository', () => {
     // When the event is marked as recorded
     const recordedAt = new Date();
     const accountId = createId();
-    await repository.markRecorded(event.id, recordedAt, accountId);
-    // Then the recorded time and account are saved
+    await repository.markRecorded(event.id, { recordedAt, createdBy: accountId });
+    // Then the recorded time and created at are updated
     expect(repository.events[0].recordedAt).toBe(recordedAt);
     expect(repository.events[0].createdBy).toBe(accountId);
   });
@@ -118,7 +118,9 @@ describe('createFakeEventsRepository', () => {
     // Given a repository without events
     const repository = createFakeEventsRepository();
     // When trying to mark an event as recorded
-    await expect(repository.markRecorded('1', new Date(), createId())).rejects.toThrow(
+    await expect(
+      repository.markRecorded('1', { recordedAt: new Date(), createdBy: createId() })
+    ).rejects.toThrow(
       // Then an error is thrown
       'Event 1 not found'
     );
@@ -186,6 +188,23 @@ describe('createFakeEventServerAdapter', () => {
     expect(eventServerAdapter.recordedEvents[0].createdBy).toBe(account?.id);
   });
 
+  it('returns existing event when recording duplicate event', async () => {
+    // Given an auth adapter
+    const authAdapter = createFakeAuthAdapter();
+    const account = await authAdapter.getAccount();
+    // And an event server adapter with an event
+    const eventServerAdapter = createFakeEventServerAdapter(authAdapter);
+    const event = createEvent('TEST', 'TEST', { createdBy: account?.id });
+    const recordedEvent1 = await eventServerAdapter.record(event);
+    expect(eventServerAdapter.recordedEvents).toHaveLength(1);
+    // When the event is recorded again
+    const recordedEvent2 = await eventServerAdapter.record(event);
+    // Then the existing event is returned
+    expect(recordedEvent2).toEqual(recordedEvent1);
+    // And the event is not saved again
+    expect(eventServerAdapter.recordedEvents).toHaveLength(1);
+  });
+
   it('throws an error if no account is found when trying to record an event', async () => {
     // Given an auth adapter that returns no account
     const authAdapter = createFakeAuthAdapter();
@@ -218,9 +237,18 @@ describe('createFakeEventServerAdapter', () => {
   it('can fetch events that were recorded after a specified event', async () => {
     // Given an event server adapter with three events
     const eventServerAdapter = createFakeEventServerAdapter();
-    const event1 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-28') });
-    const event2 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-29') });
-    const event3 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-30') });
+    const event1 = createEvent('TEST', 'TEST', {
+      recordedAt: new Date('2023-08-28'),
+      createdBy: createId(),
+    });
+    const event2 = createEvent('TEST', 'TEST', {
+      recordedAt: new Date('2023-08-29'),
+      createdBy: createId(),
+    });
+    const event3 = createEvent('TEST', 'TEST', {
+      recordedAt: new Date('2023-08-30'),
+      createdBy: createId(),
+    });
     eventServerAdapter.recordedEvents = [event2, event3, event1];
     // When fetching events after the first event
     const newEvents = await eventServerAdapter.fetch(event1.id);
@@ -233,9 +261,18 @@ describe('createFakeEventServerAdapter', () => {
   it('can fetch all events', async () => {
     // Given an event server adapter with three events
     const eventServerAdapter = createFakeEventServerAdapter();
-    const event1 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-28') });
-    const event2 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-29') });
-    const event3 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-30') });
+    const event1 = createEvent('TEST', 'TEST', {
+      recordedAt: new Date('2023-08-28'),
+      createdBy: createId(),
+    });
+    const event2 = createEvent('TEST', 'TEST', {
+      recordedAt: new Date('2023-08-29'),
+      createdBy: createId(),
+    });
+    const event3 = createEvent('TEST', 'TEST', {
+      recordedAt: new Date('2023-08-30'),
+      createdBy: createId(),
+    });
     eventServerAdapter.recordedEvents = [event2, event3, event1];
     // When fetching events after the first event
     const newEvents = await eventServerAdapter.fetch(null);
@@ -254,7 +291,7 @@ describe('createFakeEventServerAdapter', () => {
     const subscriber2 = jest.fn();
     eventServerAdapter.subscribe!(subscriber2);
     // When an event is dispatched
-    const event = createEvent('TEST', 'TEST', { recordedAt: new Date() });
+    const event = createEvent('TEST', 'TEST', { recordedAt: new Date(), createdBy: createId() });
     eventServerAdapter.dispatch(event);
     // Then both subscribers are called with the event
     expect(subscriber1).toHaveBeenCalledWith(event);

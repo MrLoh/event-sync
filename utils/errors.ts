@@ -27,3 +27,10 @@ export class ConflictError extends Error {
     super(message);
   }
 }
+
+export class NetworkError extends Error {
+  name = 'NetworkError' as const;
+  constructor(message: string) {
+    super(message);
+  }
+}

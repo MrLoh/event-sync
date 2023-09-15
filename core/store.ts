@@ -14,7 +14,10 @@ import type {
   AggregateConfig,
   AggregateEventDispatchers,
   AggregateCommandsMaker,
+  EventServerAdapter,
+  AnyAggregateEvent,
 } from '../utils/types';
+import { tryCatch } from '../utils/result';
 
 export type AggregateStore<
   U extends AccountInterface,
@@ -36,16 +39,12 @@ export type AggregateStore<
      */
     subscribe: (fn: (state: { [id: string]: S }) => void) => () => void;
     /**
-     * Mark an aggregate as recorded to set recorded by if undefined and last recorded by fields
+     * record an event to the event server and, if successful, mark it as recorded in the events
+     * repository, update the aggregate state and persist it in the aggregate repository
      *
-     * @param res the recording result from the event server
+     * @param event the event to record must have a matching aggregate type of the store
      */
-    markRecorded: (res: {
-      eventId: string;
-      aggregateId: string;
-      recordedAt: Date;
-      recordedBy: string;
-    }) => Promise<void>;
+    recordEvent: (event: AnyAggregateEvent) => Promise<void>;
     /**
      * Reset state of the aggregates to the initial state and delete all entries from the aggregate
      */
@@ -96,10 +95,21 @@ export const createStore = <
 >(
   aggBuilderOrConfig: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> },
   ctx: {
-    authAdapter: AuthAdapter<U>;
+    /**
+     * Method to generate an id for events, will be used as fallback for aggregates as well if no
+     * createId function is specified in the aggregate config
+     *
+     * @returns a unique id
+     */
     createId: () => string;
-    eventsRepository?: EventsRepository;
+    /** The auth adapter to get device ids and accounts */
+    authAdapter: AuthAdapter<U>;
+    /** The main event bus */
     eventBus: EventBus;
+    /** The repository for persisting events*/
+    eventsRepository?: EventsRepository;
+    /** The event server adapter to record events */
+    eventServerAdapter?: EventServerAdapter;
   }
 ): AggregateStore<U, A, S, E, C> => {
   const agg = 'config' in aggBuilderOrConfig ? aggBuilderOrConfig.config : aggBuilderOrConfig;
@@ -122,6 +132,41 @@ export const createStore = <
       initialized = true;
     }
   })();
+
+  const recordEvent = async (event: AnyAggregateEvent) => {
+    if (event.recordedAt) return;
+    if (event.aggregateType !== agg.aggregateType) {
+      throw new Error(
+        `${agg.aggregateType} store cannot record event for ${event.aggregateType} aggregate`
+      );
+    }
+    if (!ctx.eventServerAdapter) return;
+    const account = await ctx.authAdapter.getAccount();
+    if (!account) return;
+    // TODO: explicitly handle errors from server like authorization errors
+    const { val: recordedEvent } = await tryCatch(() => ctx.eventServerAdapter!.record(event));
+    if (!recordedEvent) return;
+    await initialization;
+    const currState = collection$.value[event.aggregateId];
+    // ignore if aggregate state does not exist because it was deleted or there is a race condition
+    if (event.operation !== 'delete' && currState) {
+      const nextState = stateSchema.parse({
+        ...currState,
+        createdBy: currState.createdBy ?? recordedEvent.createdBy,
+        lastRecordedAt: recordedEvent.recordedAt,
+      } as S);
+      collection$.next({ ...collection$.value, [event.aggregateId]: nextState });
+      if (agg.aggregateRepository) {
+        await agg.aggregateRepository.update(event.aggregateId, nextState);
+      }
+    }
+    if (ctx.eventsRepository) {
+      await ctx.eventsRepository.markRecorded(event.id, {
+        recordedAt: recordedEvent.recordedAt,
+        createdBy: recordedEvent.createdBy,
+      });
+    }
+  };
 
   // process events for this aggregate from the event bus. This needs to be separate from the
   // event processing functions since events may come both from the application as well as from
@@ -153,6 +198,7 @@ export const createStore = <
             return await agg.aggregateRepository.delete(event.aggregateId);
           }
         }
+        if (!event.recordedAt) await recordEvent(event);
       } catch (e) {
         ctx.eventBus.terminate(e as Error);
         collection$.next(currStoreState);
@@ -160,52 +206,55 @@ export const createStore = <
     };
 
     if (event.aggregateType !== agg.aggregateType) return;
-    switch (event.operation) {
-      case 'create': {
-        const constructor = eventByEventType[event.type].construct;
-        const state = stateSchema.parse({
-          ...constructor!(event.payload),
-          id: event.aggregateId,
-          createdOn: event.createdOn,
-          createdBy: event.createdBy,
-          createdAt: event.dispatchedAt,
-          updatedAt: event.dispatchedAt,
-          lastEventId: event.id,
-          lastRecordedAt: event.recordedAt,
-          version: 1,
-        } as S);
-        collection$.next({ ...currStoreState, [event.aggregateId]: state });
-        return await persistEventAndAggregate(state);
+    try {
+      switch (event.operation) {
+        case 'create': {
+          const constructor = eventByEventType[event.type].construct;
+          const state = stateSchema.parse({
+            ...constructor!(event.payload),
+            id: event.aggregateId,
+            createdOn: event.createdOn,
+            createdBy: event.createdBy,
+            createdAt: event.dispatchedAt,
+            updatedAt: event.dispatchedAt,
+            lastEventId: event.id,
+            lastRecordedAt: event.recordedAt,
+            version: 1,
+          } as S);
+          collection$.next({ ...currStoreState, [event.aggregateId]: state });
+          return await persistEventAndAggregate(state);
+        }
+        case 'update': {
+          const reducer = eventByEventType[event.type].reduce;
+          const currState = collection$.value[event.aggregateId];
+          const nextState: S = stateSchema.parse({
+            ...currState,
+            ...reducer!(currState, event.payload),
+            id: event.aggregateId,
+            createdOn: currState.createdOn,
+            createdBy: currState.createdBy,
+            createdAt: currState.createdAt,
+            updatedAt: event.dispatchedAt,
+            lastEventId: event.id,
+            lastRecordedAt: event.recordedAt ?? currState.lastRecordedAt,
+            version: currState.version + 1,
+          });
+          collection$.next({ ...currStoreState, [event.aggregateId]: nextState });
+          return await persistEventAndAggregate(nextState);
+        }
+        case 'delete': {
+          const destructor = eventByEventType[event.type].destruct;
+          const state = collection$.value[event.aggregateId];
+          if (destructor) destructor(state, event.payload);
+          const { [event.aggregateId]: _, ...rest } = currStoreState;
+          collection$.next(rest);
+          await persistEventAndAggregate(state);
+          return await recordEvent(event);
+        }
       }
-      case 'update': {
-        const reducer = eventByEventType[event.type].reduce;
-        const currState = collection$.value[event.aggregateId];
-        const nextState: S = stateSchema.parse({
-          ...currState,
-          ...reducer!(currState, event.payload),
-          id: event.aggregateId,
-          createdOn: currState.createdOn,
-          createdBy: currState.createdBy,
-          createdAt: currState.createdAt,
-          updatedAt: event.dispatchedAt,
-          lastEventId: event.id,
-          lastRecordedAt: event.recordedAt ?? currState.lastRecordedAt,
-          version: currState.version + 1,
-        });
-        collection$.next({ ...currStoreState, [event.aggregateId]: nextState });
-        return await persistEventAndAggregate(nextState);
-      }
-      case 'delete': {
-        const destructor = eventByEventType[event.type].destruct;
-        const state = collection$.value[event.aggregateId];
-        destructor?.(state, event.payload);
-        const { [event.aggregateId]: _, ...rest } = currStoreState;
-        collection$.next(rest);
-        return await persistEventAndAggregate(state);
-      }
-      default:
-        // istanbul ignore next
-        throw new Error(`Invalid operation ${event.operation}`);
+    } catch (e) {
+      ctx.eventBus.terminate(e as Error);
+      collection$.next(currStoreState);
     }
   });
 
@@ -268,13 +317,12 @@ export const createStore = <
         return async (id: string, payload?: any): Promise<void> => {
           await initialization;
           const currState = collection$.value[id];
-          if (!currState) throw new NotFoundError(`Aggregate with id ${id} not found`);
+          if (!currState) {
+            throw new NotFoundError(`${agg.aggregateType} aggregate with id ${id} not found`);
+          }
           await dispatch(id, payload, currState.lastEventId);
           return;
         };
-      default:
-        // istanbul ignore next
-        throw new Error(`Invalid operation ${eventConfig.operation}`);
     }
   }) as AggregateEventDispatchers<U, A, S, E>;
 
@@ -293,10 +341,10 @@ export const createStore = <
     'initialized',
     'markRecorded',
   ];
-  if (restrictedProps.some((prop) => dispatchers?.hasOwnProperty(prop))) {
+  if (restrictedProps.some((prop) => dispatchers.hasOwnProperty(prop))) {
     throw new Error(`events cannot have the following names: ${restrictedProps.join(', ')}`);
   }
-  if (restrictedProps.some((prop) => commands?.hasOwnProperty(prop))) {
+  if (restrictedProps.some((prop) => commands.hasOwnProperty(prop))) {
     throw new Error(`commands cannot have the following names: ${restrictedProps.join(', ')}`);
   }
 
@@ -312,33 +360,7 @@ export const createStore = <
       if (agg.aggregateRepository) await agg.aggregateRepository.deleteAll();
       collection$.next({});
     },
-    markRecorded: async ({
-      eventId,
-      aggregateId,
-      recordedAt,
-      recordedBy,
-    }: {
-      eventId: string;
-      aggregateId: string;
-      recordedAt: Date;
-      recordedBy: string;
-    }) => {
-      await initialization;
-      const currState = collection$.value[aggregateId];
-      if (!currState) throw new NotFoundError(`Aggregate with id ${aggregateId} not found`);
-      const nextState = stateSchema.parse({
-        ...currState,
-        createdBy: currState.createdBy ?? recordedBy,
-        lastRecordedAt: recordedAt,
-      } as S);
-      collection$.next({ ...collection$.value, [aggregateId]: nextState });
-      if (agg.aggregateRepository) {
-        await agg.aggregateRepository.update(aggregateId, nextState);
-      }
-      if (ctx.eventsRepository) {
-        await ctx.eventsRepository.markRecorded(eventId, recordedAt, recordedBy);
-      }
-    },
+    recordEvent,
     initialize: () => {
       return initialization;
     },

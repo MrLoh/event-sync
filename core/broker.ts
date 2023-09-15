@@ -114,14 +114,6 @@ export const createBroker = <U extends AccountInterface>({
   const eventBus = createEventBus();
   if (onTermination) eventBus.onTermination(onTermination);
 
-  const recordEvent = async (event: AnyAggregateEvent) => {
-    const account = await authAdapter.getAccount();
-    if (!eventServerAdapter || !account) return;
-    // TODO: make errors from event server adapter more specific
-    const { val } = await tryCatch(() => eventServerAdapter.record(event));
-    if (val) stores[event.aggregateType].markRecorded(val);
-  };
-
   // TODO: device way to guarantee at least once delivery of events to the store to ensure the state
   // is updated and the event is persisted in the repository
   const dispatchEvent = async (event: AnyAggregateEvent) => {
@@ -129,30 +121,29 @@ export const createBroker = <U extends AccountInterface>({
   };
 
   let activeSync: Promise<void> | null = null;
-  const sync = async () => {
+  const sync = () => {
     if (activeSync) return activeSync;
     activeSync = (async () => {
       if (eventsRepository && eventServerAdapter) {
         // store any unrecorded events
         const events = await eventsRepository.getUnrecorded();
-        if (events.length) await Promise.all(events.map(recordEvent));
+        if (events.length) {
+          await Promise.all(events.map((event) => stores[event.aggregateType].recordEvent(event)));
+        }
         // fetch any new events
         const lastRecordedEvent = await eventsRepository.getLastRecordedEvent();
         // TODO: make errors from event server adapter more specific
         const { val: newEvents } = await tryCatch(() =>
-          eventServerAdapter?.fetch(lastRecordedEvent?.id || null)
+          eventServerAdapter.fetch(lastRecordedEvent?.id || null)
         );
-        if (newEvents?.length) newEvents.map(dispatchEvent);
+        if (newEvents && newEvents.length) newEvents.map(dispatchEvent);
       }
       activeSync = null;
     })();
+    return activeSync;
   };
 
   const initialize = () => {
-    // subscribe client events to record them to server
-    const unsubscribeFromEventBus = eventBus.subscribe((event) => {
-      if (!event.recordedAt) recordEvent(event);
-    });
     // subscribe to server events to dispatch them on client
     let unsubscribeFromServerAdapter: (() => void) | undefined;
     if (eventServerAdapter?.subscribe) {
@@ -167,8 +158,7 @@ export const createBroker = <U extends AccountInterface>({
       .subscribe(sync);
     // return unsubscribe function
     return () => {
-      unsubscribeFromEventBus();
-      unsubscribeFromServerAdapter?.();
+      if (unsubscribeFromServerAdapter) unsubscribeFromServerAdapter();
       periodicSyncSubscription.unsubscribe();
     };
   };
@@ -191,7 +181,13 @@ export const createBroker = <U extends AccountInterface>({
   >(
     agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> }
   ) => {
-    const store = createStore(agg, { authAdapter, createId, eventsRepository, eventBus });
+    const store = createStore(agg, {
+      createId,
+      authAdapter,
+      eventBus,
+      eventsRepository,
+      eventServerAdapter,
+    });
     const aggregateType = 'config' in agg ? agg.config.aggregateType : agg.aggregateType;
     stores[aggregateType] = store;
     return store;

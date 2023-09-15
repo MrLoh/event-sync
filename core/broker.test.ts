@@ -10,6 +10,7 @@ import {
   createFakeAuthAdapter,
 } from '../utils/fakes';
 import { BaseState } from '../utils/types';
+import { NetworkError } from '../utils/errors';
 
 describe('create broker', () => {
   jest.useFakeTimers({ timerLimit: 100 });
@@ -18,7 +19,7 @@ describe('create broker', () => {
     eventServerAdapter?: ReturnType<typeof createFakeEventServerAdapter>;
     onTermination?: (error?: Error) => void;
   }) => {
-    const retrySyncInterval = 30;
+    const retrySyncInterval = 30 as const;
     const eventsRepository = createFakeEventsRepository();
     const aggregateRepository = createFakeAggregateRepository<{ name: string } & BaseState>();
     const authAdapter = createFakeAuthAdapter();
@@ -99,12 +100,13 @@ describe('create broker', () => {
     });
   });
 
-  it('syncs events to server', async () => {
+  it('records events to server', async () => {
     // Given a broker with a server adapter
     const { store, eventServerAdapter, eventsRepository } = setup();
     jest.spyOn(eventServerAdapter, 'record');
     // When an event is dispatched
     const id = await store.create({ name: 'test' });
+    await jest.advanceTimersByTimeAsync(0);
     // Then it is recorded with the event server adapter
     expect(eventServerAdapter.record).toHaveBeenCalled();
     expect(eventServerAdapter.recordedEvents).toHaveLength(1);
@@ -128,7 +130,33 @@ describe('create broker', () => {
     expect(store.state[id]).toMatchObject({ lastRecordedAt: expect.any(Date) });
   });
 
-  it('only syncs events to the server if there is an account', async () => {
+  it('does not record events to the server if store fails to process them', async () => {
+    // Given a broker with a event handler that fails
+    const onTermination = jest.fn();
+    const { broker, eventServerAdapter } = setup({ onTermination });
+    const store = broker
+      .aggregate('test')
+      .schema(z.object({}))
+      .events((event) => ({
+        failing: event('create')
+          .payload(z.undefined())
+          .constructor(() => {
+            throw new Error('test');
+          }),
+      }))
+      .register();
+    jest.spyOn(eventServerAdapter, 'record');
+    // When an event is dispatched
+    await store.failing();
+    await jest.advanceTimersByTimeAsync(0);
+    // Then the event bus terminates
+    expect(onTermination).toHaveBeenCalled();
+    expect(broker.eventBus.terminated).toBe(true);
+    // And the event server adapter is not called to record the event
+    expect(eventServerAdapter.record).not.toHaveBeenCalled();
+  });
+
+  it('only records events on the server if there is an account', async () => {
     // Given a broker with a server and auth adapter
     const { broker, store, eventServerAdapter, eventsRepository } = setup();
     jest.spyOn(eventServerAdapter, 'record');
@@ -136,6 +164,7 @@ describe('create broker', () => {
     jest.spyOn(broker.authAdapter, 'getAccount').mockImplementation(async () => null);
     // When an event is dispatched
     const id = await store.create({ name: 'test' });
+    await jest.advanceTimersByTimeAsync(0);
     // Then the store state is updated
     expect(store.state[id]).toMatchObject({ id, name: 'test', createdBy: undefined });
     // And the event is persisted to the events repository
@@ -185,7 +214,7 @@ describe('create broker', () => {
     });
   });
 
-  it('if device comes back online previously dispatched events are synced', async () => {
+  it('if device comes back online previously dispatched events are recorded', async () => {
     // Given a broker with a server adapter and a connection status adapter
     const {
       store,
@@ -197,10 +226,11 @@ describe('create broker', () => {
     // And events were dispatched while the device was offline
     connectionStatusAdapter.set(false);
     jest.spyOn(eventServerAdapter, 'record').mockImplementation(async () => {
-      throw new Error('network not available');
+      throw new NetworkError('offline');
     });
     const id = await store.create({ name: 'test' });
     await store.update(id, { name: 'test2' });
+    await jest.advanceTimersByTimeAsync(0);
     expect(eventsRepository.events).toHaveLength(2);
     expect(eventsRepository.events.filter((e) => !e.recordedAt)).toHaveLength(2);
     // When the device comes back online
@@ -227,17 +257,18 @@ describe('create broker', () => {
     // And events were dispatched while the device was offline
     connectionStatusAdapter.set(false);
     jest.spyOn(eventServerAdapter, 'record').mockImplementation(async () => {
-      throw new Error('network not available');
+      throw new NetworkError('offline');
     });
     const id = await store.create({ name: 'test' });
     await store.update(id, { name: 'test2' });
+    await jest.advanceTimersByTimeAsync(retrySyncInterval);
     expect(eventsRepository.events).toHaveLength(2);
     expect(eventsRepository.events.filter((e) => !e.recordedAt)).toHaveLength(2);
-    expect(eventServerAdapter.record).toHaveBeenCalledTimes(2);
+    expect(eventServerAdapter.record).toHaveBeenCalled();
     // When the device comes back online but the sync still fails
     connectionStatusAdapter.set(true);
-    await jest.advanceTimersByTimeAsync(retrySyncInterval);
-    expect(eventServerAdapter.record).toHaveBeenCalledTimes(4);
+    await jest.advanceTimersByTimeAsync(retrySyncInterval * 2);
+    expect(eventsRepository.events.filter((e) => !e.recordedAt)).toHaveLength(2);
     // Then it retries after a while
     jest.spyOn(eventServerAdapter, 'record').mockRestore();
     jest.spyOn(eventServerAdapter, 'record');
@@ -256,6 +287,7 @@ describe('create broker', () => {
     const serverEvent1 = createEvent('profile', 'profile.create', {
       payload: { name: 'server' },
       recordedAt: new Date(),
+      createdBy: createId(),
     });
     const serverEvent2 = createEvent('profile', 'profile.update', {
       operation: 'update',
@@ -263,6 +295,7 @@ describe('create broker', () => {
       aggregateId: serverEvent1.aggregateId,
       prevId: serverEvent1.id,
       recordedAt: new Date(),
+      createdBy: createId(),
     });
     eventServerAdapter.dispatch(serverEvent1);
     eventServerAdapter.dispatch(serverEvent2);
@@ -290,6 +323,7 @@ describe('create broker', () => {
     const serverEvent = createEvent('profile', 'profile.create', {
       payload: { name: 'server' },
       recordedAt: new Date(),
+      createdBy: createId(),
     });
     eventServerAdapter.dispatch(serverEvent);
     await jest.advanceTimersByTimeAsync(retrySyncInterval / 4);
@@ -311,6 +345,18 @@ describe('create broker', () => {
     });
   });
 
+  it('does not trigger another sync if one is in progress', async () => {
+    // Given a broker
+    const { broker } = setup();
+    await jest.advanceTimersByTimeAsync(0);
+    // When a sync is triggered
+    const sync1 = broker.sync();
+    // And another sync is triggered before the first one is finished
+    const sync2 = broker.sync();
+    // Then the both syncs return the same promise
+    expect(sync1).toBe(sync2);
+  });
+
   it('subscribes to new events dispatched to the server from other devices', async () => {
     // Given a broker with a server adapter that supports subscriptions
     const { store, eventServerAdapter, eventsRepository } = setup();
@@ -319,6 +365,7 @@ describe('create broker', () => {
     const event = createEvent('profile', 'profile.create', {
       payload: { name: 'other client' },
       recordedAt: new Date(),
+      createdBy: createId(),
     });
     eventServerAdapter.dispatch(event);
     await jest.advanceTimersByTimeAsync(0);
@@ -351,6 +398,7 @@ describe('create broker', () => {
     const event = createEvent('profile', 'profile.create', {
       payload: { name: 'other client' },
       recordedAt: new Date(),
+      createdBy: createId(),
     });
     eventServerAdapter.dispatch(event);
     await jest.advanceTimersByTimeAsync(retrySyncInterval);
@@ -398,6 +446,7 @@ describe('create broker', () => {
     const event = createEvent('profile', 'profile.create', {
       payload: { name: 'other client' },
       recordedAt: new Date(),
+      createdBy: createId(),
     });
     eventServerAdapter.dispatch(event);
     await jest.advanceTimersByTimeAsync(0);
