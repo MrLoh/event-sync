@@ -28,29 +28,44 @@ export type AggregateStore<
 > = Omit<AggregateEventDispatchers<U, A, S, E>, keyof ReturnType<C>> &
   ReturnType<C> & {
     /**
-     * object containing the states of all aggregates keyed by id
+     * Object containing the states of all aggregates keyed by id
      */
     state: { [id: string]: S };
     /**
-     * subscribe to changes in the state of the aggregates
+     * Subscribe to changes in the state of the aggregates
      *
      * @param fn the function to call when the state changes
      * @returns a function to unsubscribe
      */
     subscribe: (fn: (state: { [id: string]: S }) => void) => () => void;
     /**
-     * record an event to the event server and, if successful, mark it as recorded in the events
+     * Apply an event to the aggregate store
+     *
+     * @remarks
+     * This handles altering the aggregate state, persisting it in the aggregate repository as well
+     * as persisting the event in the event repository and trying to record it on the event server.
+     * It will also dispatch the event on the event bus if available and everything else succeeded.
+     * This is called both from within the event dispatcher functions as well as from the broker to
+     * apply events that originated from other clients.
+     *
+     * @param event the event to apply
+     * @returns true if the event was applied successfully, false if not
+     */
+    applyEvent: (event: AnyAggregateEvent) => Promise<boolean>;
+    /**
+     * Record an event to the event server and, if successful, mark it as recorded in the events
      * repository, update the aggregate state and persist it in the aggregate repository
      *
      * @param event the event to record must have a matching aggregate type of the store
+     * @returns true if the event was recorded successfully, false if not
      */
-    recordEvent: (event: AnyAggregateEvent) => Promise<void>;
+    recordEvent: (event: AnyAggregateEvent) => Promise<boolean>;
     /**
      * Reset state of the aggregates to the initial state and delete all entries from the aggregate
      */
     reset: () => Promise<void>;
     /**
-     * await this to ensure the store is initialized
+     * Await this to ensure the store is initialized
      *
      * @remarks
      * it is not necessary to call this function to initialize the store, it's just a convenience to
@@ -58,7 +73,7 @@ export type AggregateStore<
      */
     initialize: () => Promise<void>;
     /**
-     * indicates wether the store has been initialized
+     * Indicates wether the store has been initialized
      */
     initialized: boolean;
   };
@@ -105,7 +120,7 @@ export const createStore = <
     /** The auth adapter to get device ids and accounts */
     authAdapter: AuthAdapter<U>;
     /** The main event bus */
-    eventBus: EventBus;
+    eventBus?: EventBus;
     /** The repository for persisting events*/
     eventsRepository?: EventsRepository;
     /** The event server adapter to record events */
@@ -133,19 +148,26 @@ export const createStore = <
     }
   })();
 
+  const eventByEventType = Object.values(agg.aggregateEvents).reduce(
+    (acc, eventConfig) => ({
+      ...acc,
+      [eventConfig.eventType]: eventConfig,
+    }),
+    {} as { [eventType: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
+  );
+
   const recordEvent = async (event: AnyAggregateEvent) => {
-    if (event.recordedAt) return;
     if (event.aggregateType !== agg.aggregateType) {
       throw new Error(
         `${agg.aggregateType} store cannot record event for ${event.aggregateType} aggregate`
       );
     }
-    if (!ctx.eventServerAdapter) return;
+    if (event.recordedAt || !ctx.eventServerAdapter) return false;
     const account = await ctx.authAdapter.getAccount();
-    if (!account) return;
+    if (!account) return false;
     // TODO: explicitly handle errors from server like authorization errors
     const { val: recordedEvent } = await tryCatch(() => ctx.eventServerAdapter!.record(event));
-    if (!recordedEvent) return;
+    if (!recordedEvent) return false;
     await initialization;
     const currState = collection$.value[event.aggregateId];
     // ignore if aggregate state does not exist because it was deleted or there is a race condition
@@ -166,46 +188,37 @@ export const createStore = <
         createdBy: recordedEvent.createdBy,
       });
     }
+    return true;
   };
 
-  // process events for this aggregate from the event bus. This needs to be separate from the
-  // event processing functions since events may come both from the application as well as from
-  // the server.
+  // Handle events for this aggregate which might come from a dispatcher or the server
+  // 1. compute the next state of the effected aggregate
+  // 2. persist the event and the aggregate state to repositories
+  // 4. dispatch the event to the event bus
+  // if something unexpectedly goes wrong it rolls back and terminates the event bus
+  //
   // TODO: identify synchronization conflicts and automatically resolve them by reapplying events in
   // a deterministic order.
-  ctx.eventBus.subscribe(async (event) => {
+  const applyEvent = async (event: AnyAggregateEvent) => {
     await initialization;
     const currStoreState = collection$.value;
 
-    const eventByEventType = Object.values(agg.aggregateEvents).reduce(
-      (acc, eventConfig) => ({
-        ...acc,
-        [eventConfig.eventType]: eventConfig,
-      }),
-      {} as { [eventType: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
-    );
-
     // TODO: add support for transactional commits
     const persistEventAndAggregate = async (state: S) => {
-      try {
-        if (ctx.eventsRepository) await ctx.eventsRepository.create(event);
-        if (agg.aggregateRepository) {
-          if (event.operation === 'create') {
-            await agg.aggregateRepository.create(state);
-          } else if (event.operation === 'update') {
-            return await agg.aggregateRepository.update(event.aggregateId, state);
-          } else if (event.operation === 'delete') {
-            return await agg.aggregateRepository.delete(event.aggregateId);
-          }
+      if (ctx.eventsRepository) await ctx.eventsRepository.create(event);
+      if (agg.aggregateRepository) {
+        if (event.operation === 'create') {
+          await agg.aggregateRepository.create(state);
+        } else if (event.operation === 'update') {
+          return await agg.aggregateRepository.update(event.aggregateId, state);
+        } else if (event.operation === 'delete') {
+          return await agg.aggregateRepository.delete(event.aggregateId);
         }
-        if (!event.recordedAt) await recordEvent(event);
-      } catch (e) {
-        ctx.eventBus.terminate(e as Error);
-        collection$.next(currStoreState);
       }
+      if (ctx.eventBus) ctx.eventBus.dispatch(event);
     };
 
-    if (event.aggregateType !== agg.aggregateType) return;
+    if (event.aggregateType !== agg.aggregateType) throw new Error('wrong aggregate type');
     try {
       switch (event.operation) {
         case 'create': {
@@ -222,7 +235,8 @@ export const createStore = <
             version: 1,
           } as S);
           collection$.next({ ...currStoreState, [event.aggregateId]: state });
-          return await persistEventAndAggregate(state);
+          await persistEventAndAggregate(state);
+          return true;
         }
         case 'update': {
           const reducer = eventByEventType[event.type].reduce;
@@ -240,7 +254,8 @@ export const createStore = <
             version: currState.version + 1,
           });
           collection$.next({ ...currStoreState, [event.aggregateId]: nextState });
-          return await persistEventAndAggregate(nextState);
+          await persistEventAndAggregate(nextState);
+          return true;
         }
         case 'delete': {
           const destructor = eventByEventType[event.type].destruct;
@@ -249,21 +264,22 @@ export const createStore = <
           const { [event.aggregateId]: _, ...rest } = currStoreState;
           collection$.next(rest);
           await persistEventAndAggregate(state);
-          return await recordEvent(event);
+          return true;
         }
       }
     } catch (e) {
-      ctx.eventBus.terminate(e as Error);
+      if (ctx.eventBus) ctx.eventBus.terminate(e as Error);
       collection$.next(currStoreState);
+      return false;
     }
-  });
+  };
 
   // generate map of event dispatchers from event config which
   // 1. validates event payload,
   // 2. checks authorization, and
   // 3. adds metadata
-  // and then dispatches the event to the event bus. The processing of events is handled by the
-  // subscription to the event bus above.
+  // 4. call apply to update and persist the state
+  // 5. try recording the event to the event server
   const dispatchers = mapObject(agg.aggregateEvents, (eventConfig) => {
     const dispatch = async (aggregateId: string, payload: any, lastEventId?: string) => {
       // generate event
@@ -300,8 +316,9 @@ export const createStore = <
           `Account ${account?.id} is not authorized to dispatch event ${event.type}`
         );
       }
-      // put event on event bus
-      ctx.eventBus.dispatch(event);
+      // call the apply function
+      const success = await applyEvent(event);
+      if (success) await recordEvent(event);
     };
 
     switch (eventConfig.operation) {
@@ -340,6 +357,9 @@ export const createStore = <
     'initialize',
     'initialized',
     'markRecorded',
+    'recordEvent',
+    'applyEvent',
+    'state',
   ];
   if (restrictedProps.some((prop) => dispatchers.hasOwnProperty(prop))) {
     throw new Error(`events cannot have the following names: ${restrictedProps.join(', ')}`);
@@ -349,6 +369,8 @@ export const createStore = <
   }
 
   return {
+    recordEvent,
+    applyEvent,
     get state() {
       return collection$.value;
     },
@@ -360,7 +382,6 @@ export const createStore = <
       if (agg.aggregateRepository) await agg.aggregateRepository.deleteAll();
       collection$.next({});
     },
-    recordEvent,
     initialize: () => {
       return initialization;
     },

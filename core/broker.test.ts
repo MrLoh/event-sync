@@ -429,20 +429,42 @@ describe('create broker', () => {
     expect(await aggregateRepository.getAll()).toEqual({});
   });
 
+  it('can subscribe to events dispatched to the event bus', async () => {
+    // Given a broker and a store
+    const { broker, store } = setup();
+    // And a subscriber to the event bus
+    const subscriber = jest.fn();
+    broker.subscribeToEvents(subscriber);
+    // When an event is dispatched
+    const id = await store.create({ name: 'test' });
+    await jest.advanceTimersByTimeAsync(0);
+    // Then the subscriber is notified
+    expect(subscriber).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aggregateId: id,
+        type: 'profile.create',
+        payload: { name: 'test' },
+      })
+    );
+  });
+
   it('can set a termination handler', async () => {
     // Given a broker with a termination handler
     const terminationHandler = jest.fn();
     const { broker, eventServerAdapter, eventsRepository } = setup({
       onTermination: terminationHandler,
     });
-    // When event bus terminates with an error
+    // And a subscriber to the event bus
+    const subscriber = jest.fn();
+    broker.subscribeToEvents(subscriber);
+    // When the event bus terminates with an error
     broker.eventBus.terminate(new Error('test'));
     // Then the termination handler is called
     expect(terminationHandler).toHaveBeenCalled();
     expect(terminationHandler).toHaveBeenCalledWith(new Error('test'));
     expect(broker.eventBus.terminated).toBe(true);
     await jest.advanceTimersByTimeAsync(0);
-    // And new events are not dispatched to the broker
+    // And new events are not dispatched to the event bus anymore
     const event = createEvent('profile', 'profile.create', {
       payload: { name: 'other client' },
       recordedAt: new Date(),
@@ -450,10 +472,6 @@ describe('create broker', () => {
     });
     eventServerAdapter.dispatch(event);
     await jest.advanceTimersByTimeAsync(0);
-    expect(eventsRepository.events).toHaveLength(0);
-    // And even manual syncs cannot dispatch events to the broker
-    await broker.sync();
-    await jest.advanceTimersByTimeAsync(0);
-    expect(eventsRepository.events).toHaveLength(0);
+    expect(subscriber).not.toHaveBeenCalled();
   });
 });

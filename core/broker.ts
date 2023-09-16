@@ -76,6 +76,13 @@ export type Broker<U extends AccountInterface> = {
    * after a request has been resolved.
    */
   cleanup: () => void;
+  /**
+   * Subscribe to events dispatched on the event bus
+   *
+   * @param subscriber the subscriber function
+   * @returns a function to unsubscribe
+   */
+  subscribeToEvents: (subscriber: (event: AnyAggregateEvent) => void) => () => void;
 };
 
 const connectionStatusObservable = (connectionStatusAdapter?: ConnectionStatusAdapter) => {
@@ -114,11 +121,8 @@ export const createBroker = <U extends AccountInterface>({
   const eventBus = createEventBus();
   if (onTermination) eventBus.onTermination(onTermination);
 
-  // TODO: device way to guarantee at least once delivery of events to the store to ensure the state
-  // is updated and the event is persisted in the repository
-  const dispatchEvent = async (event: AnyAggregateEvent) => {
-    if (!eventBus.terminated) eventBus.dispatch(event);
-  };
+  const applyEvent = (event: AnyAggregateEvent) => stores[event.aggregateType].applyEvent(event);
+  const recordEvent = (event: AnyAggregateEvent) => stores[event.aggregateType].recordEvent(event);
 
   let activeSync: Promise<void> | null = null;
   const sync = () => {
@@ -128,7 +132,7 @@ export const createBroker = <U extends AccountInterface>({
         // store any unrecorded events
         const events = await eventsRepository.getUnrecorded();
         if (events.length) {
-          await Promise.all(events.map((event) => stores[event.aggregateType].recordEvent(event)));
+          await Promise.all(events.map(recordEvent));
         }
         // fetch any new events
         const lastRecordedEvent = await eventsRepository.getLastRecordedEvent();
@@ -136,7 +140,7 @@ export const createBroker = <U extends AccountInterface>({
         const { val: newEvents } = await tryCatch(() =>
           eventServerAdapter.fetch(lastRecordedEvent?.id || null)
         );
-        if (newEvents && newEvents.length) newEvents.map(dispatchEvent);
+        if (newEvents && newEvents.length) newEvents.map(applyEvent);
       }
       activeSync = null;
     })();
@@ -147,7 +151,7 @@ export const createBroker = <U extends AccountInterface>({
     // subscribe to server events to dispatch them on client
     let unsubscribeFromServerAdapter: (() => void) | undefined;
     if (eventServerAdapter?.subscribe) {
-      unsubscribeFromServerAdapter = eventServerAdapter.subscribe(dispatchEvent);
+      unsubscribeFromServerAdapter = eventServerAdapter.subscribe(applyEvent);
     }
     // retry syncing events periodically and when device comes online
     const periodicSyncSubscription = merge(
@@ -221,5 +225,6 @@ export const createBroker = <U extends AccountInterface>({
     cleanup: () => {
       unsubscribe();
     },
+    subscribeToEvents: eventBus.subscribe,
   };
 };

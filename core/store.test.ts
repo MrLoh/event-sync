@@ -145,6 +145,7 @@ describe('create store', () => {
     context.eventBus.subscribe(subscriber);
     // When a event is called
     const id = await store.create({ name: 'test' });
+    await jest.advanceTimersByTimeAsync(0);
     // Then an event is dispatched to the given aggregate
     expect(subscriber).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -167,6 +168,7 @@ describe('create store', () => {
     context.eventBus.subscribe(subscriber);
     // When a event is called
     const id = await store.create({ name: 'test' });
+    await jest.advanceTimersByTimeAsync(0);
     // Then an event is dispatched which has appropriate metadata
     expect(subscriber).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -413,6 +415,7 @@ describe('create store', () => {
     const account = await context.authAdapter.getAccount();
     // When the create command is called
     await store.create();
+    await jest.advanceTimersByTimeAsync(0);
     // Then it can use the context to get information and dispatch an event
     expect(subscriber).toHaveBeenCalledWith(
       expect.objectContaining({
