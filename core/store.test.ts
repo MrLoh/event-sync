@@ -14,7 +14,6 @@ import {
   createFakeAggregateRepository,
   createFakeEventsRepository,
   createAggregateObject,
-  createFakeEventServerAdapter,
   createEvent,
 } from '../utils/fakes';
 import type {
@@ -54,7 +53,6 @@ describe('create store', () => {
       authAdapter,
       eventBus: createEventBus(),
       eventsRepository: createFakeEventsRepository(),
-      eventServerAdapter: createFakeEventServerAdapter(authAdapter),
     };
     const store = createStore(
       {
@@ -271,76 +269,6 @@ describe('create store', () => {
     expect(await aggregateRepository.getOne(id)).toMatchObject({ id, name: 'test' });
   });
 
-  it('event is recorded on event server', async () => {
-    // Given a store with an event server adapter
-    const { store, context } = setup();
-    jest.spyOn(context.eventServerAdapter, 'record');
-    // And a subscriber to the state
-    const subscriber = jest.fn();
-    store.subscribe(subscriber);
-    // When a event is called and has time to process
-    const id = await store.create({ name: 'test' });
-    await jest.advanceTimersByTimeAsync(0);
-    // Then the event is recorded on the server
-    expect(context.eventServerAdapter.record).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
-    );
-    expect(context.eventServerAdapter.recordedEvents).toContainEqual(
-      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
-    );
-    // And the state is updated with the last recorded time
-    expect(store.state[id]).toMatchObject({ lastRecordedAt: expect.any(Date) });
-    // And the subscriber is called
-    expect(subscriber).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        [id]: expect.objectContaining({ lastRecordedAt: expect.any(Date) }),
-      })
-    );
-    // And the event is marked as recorded in the repository
-    expect(context.eventsRepository.events[0]).toMatchObject({ recordedAt: expect.any(Date) });
-  });
-
-  it('does not throw if event server is offline', async () => {
-    // Given a store with an event server adapter
-    const { store, context } = setup();
-    jest.spyOn(context.eventServerAdapter, 'record').mockImplementationOnce(async () => {
-      throw new NetworkError('server is offline');
-    });
-    // When a event is called and has time to process
-    const id = await store.create({ name: 'test' });
-    await jest.advanceTimersByTimeAsync(0);
-    // Then the event is not recorded on the server
-    expect(context.eventServerAdapter.record).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
-    );
-    expect(context.eventServerAdapter.recordedEvents).not.toContainEqual(
-      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
-    );
-    // And the event is not marked as recorded
-    expect(store.state[id].lastRecordedAt).toBeUndefined();
-    // And the event is not marked as recorded in the repository
-    expect(context.eventsRepository.events[0].recordedAt).toBeUndefined();
-  });
-
-  it('does not try to record event if account is not logged in', async () => {
-    // Given a store with an event server adapter and no account
-    const { store, context } = setup({ authPolicy: () => true });
-    jest.spyOn(context.authAdapter, 'getAccount').mockImplementation(async () => null);
-    jest.spyOn(context.eventServerAdapter, 'record');
-    // When a event is called and has time to process
-    const id = await store.create({ name: 'test' });
-    await jest.advanceTimersByTimeAsync(0);
-    // Then the event is not recorded on the server
-    expect(context.eventServerAdapter.record).not.toHaveBeenCalled();
-    expect(context.eventServerAdapter.recordedEvents).not.toContainEqual(
-      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'test' } })
-    );
-    // And the event is not marked as recorded
-    expect(store.state[id].lastRecordedAt).toBeUndefined();
-    // And the event is not marked as recorded in the repository
-    expect(context.eventsRepository.events[0].recordedAt).toBeUndefined();
-  });
-
   it('event persists event in repository', async () => {
     // Given a store
     const { store, context } = setup();
@@ -535,78 +463,114 @@ describe('create store', () => {
     );
   });
 
-  it('can record event', async () => {
-    // Given a store with an event server adapter
+  it('can mark events as recorded', async () => {
+    // Given a store with an event server adapter and no account
     const { store, context, aggregateRepository } = setup({ authPolicy: () => true });
-    jest.spyOn(context.eventServerAdapter, 'record');
-    // And an existing profile that was created without an account
-    jest.spyOn(context.authAdapter, 'getAccount').mockImplementation(async () => null);
+    jest.spyOn(context.authAdapter, 'getAccount').mockImplementationOnce(async () => null);
+    // And an existing profile
     const id = await store.create({ name: 'tester' });
-    await jest.advanceTimersByTimeAsync(0);
     expect(store.state[id].createdBy).toBeUndefined();
     expect(context.eventsRepository.events[0].recordedAt).toBeUndefined();
     expect(context.eventsRepository.events[0].createdBy).toBeUndefined();
     // And a subscriber to the store
     const subscriber = jest.fn();
     store.subscribe(subscriber);
-    // When an account is logged in
-    jest.spyOn(context.authAdapter, 'getAccount').mockReset();
-    const account = await context.authAdapter.getAccount();
-    // And the event is recorded
-    await store.recordEvent(context.eventsRepository.events[0]);
-    // Then the server is called to record the event
-    expect(context.eventServerAdapter.record).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'PROFILE_CREATED', payload: { name: 'tester' } })
-    );
-    // And the state is marked as recorded
+    // When an event is marked as recorded
+    const recordedEvent = {
+      ...context.eventsRepository.events[0],
+      recordedAt: new Date(),
+      createdBy: createId(),
+    };
+    await store.markRecorded(recordedEvent);
+    // Then the state is marked as recorded
     expect(store.state[id]).toMatchObject({ lastRecordedAt: expect.any(Date) });
-    // And the created by is set to the account id
-    expect(store.state[id].createdBy).toBe(account!.id);
     // And the subscriber is called
     expect(subscriber).toHaveBeenCalledWith(
       expect.objectContaining({
-        [id]: expect.objectContaining({ createdBy: account!.id, lastRecordedAt: expect.any(Date) }),
+        [id]: expect.objectContaining({
+          createdBy: recordedEvent.createdBy,
+          lastRecordedAt: expect.any(Date),
+        }),
       })
     );
     // And the updated state is persisted to the repository
     expect(await aggregateRepository.getOne(id)).toMatchObject({
-      createdBy: account!.id,
+      createdBy: recordedEvent.createdBy,
       lastRecordedAt: expect.any(Date),
     });
     // And the event is marked as recorded in the repository
     expect(context.eventsRepository.events[0]).toMatchObject({
       recordedAt: expect.any(Date),
-      createdBy: account!.id,
+      createdBy: recordedEvent.createdBy,
     });
-  });
-
-  it('ignores calls to record an event if the event is already recorded', async () => {
-    // Given a store with an event server adapter
-    const { store, context } = setup({ authPolicy: () => true });
-    jest.spyOn(context.eventServerAdapter, 'record');
-    // And an existing event that was recorded
-    store.create({ name: 'tester' });
-    await jest.advanceTimersByTimeAsync(0);
-    const event = context.eventsRepository.events[0];
-    jest.spyOn(context.eventServerAdapter, 'record').mockClear();
-    // When the event is recorded again
-    await store.recordEvent(event);
-    // Then the server is not called to record the event again
-    expect(context.eventServerAdapter.record).not.toHaveBeenCalled();
   });
 
   it('throws error when trying to record event for other aggregate', async () => {
     // Given a store with an event server adapter
     const { store, context } = setup({ authPolicy: () => true });
     // And an event for a different aggregate
-    const event = createEvent('OTHER', 'SOMETHING_HAPPENED');
+    const event = createEvent('OTHER', 'SOMETHING_HAPPENED', {
+      createdBy: createId(),
+      recordedAt: new Date(),
+    });
     // When the event is recorded
-    await expect(() => store.recordEvent(event)).rejects.toThrowError(
+    await expect(() => store.markRecorded(event)).rejects.toThrowError(
       // Then an error is thrown
       new Error('PROFILE store cannot record event for OTHER aggregate')
     );
-    // And the event is not recorded on the server
-    expect(context.eventServerAdapter.recordedEvents).not.toContainEqual(event);
+  });
+
+  it('allows applying events to the store without calling a dispatcher', async () => {
+    // Given a store
+    const { store, context, aggregateRepository } = setup();
+    // And a subscriber to the event bus
+    const eventSubscriber = jest.fn();
+    context.eventBus.subscribe(eventSubscriber);
+    // And a subscriber to the store
+    const storeSubscriber = jest.fn();
+    store.subscribe(storeSubscriber);
+    // And an event
+    const accountId = createId();
+    const event = createEvent('PROFILE', 'PROFILE_CREATED', {
+      payload: { name: 'test' },
+      createdBy: accountId,
+      recordedAt: new Date(),
+    });
+    // When the event is applied to the store
+    store.applyEvent(event);
+    await jest.advanceTimersByTimeAsync(0);
+    // Then the state is updated
+    expect(store.state[event.aggregateId]).toMatchObject({ id: event.aggregateId, name: 'test' });
+    // And the state is persisted in the repository
+    expect(await aggregateRepository.getOne(event.aggregateId)).toMatchObject({
+      id: event.aggregateId,
+      name: 'test',
+    });
+    // And the event is persisted in the repository
+    expect(context.eventsRepository.events).toContainEqual(event);
+    // And the event is dispatched to the event bus
+    expect(eventSubscriber).toHaveBeenCalledWith(event);
+    // And the store subscriber is called
+    expect(storeSubscriber).toHaveBeenCalledWith(
+      expect.objectContaining({
+        [event.aggregateId]: expect.objectContaining({ name: 'test' }),
+      })
+    );
+  });
+
+  it('throws error when trying to apply event for other aggregate', async () => {
+    // Given a store
+    const { store } = setup();
+    // And an event for a different aggregate
+    const event = createEvent('OTHER', 'SOMETHING_HAPPENED', {
+      createdBy: createId(),
+      recordedAt: new Date(),
+    });
+    // When the event is applied to the store
+    await expect(() => store.applyEvent(event)).rejects.toThrowError(
+      // Then an error is thrown
+      new Error('PROFILE store cannot apply event for OTHER aggregate')
+    );
   });
 
   it('terminates the event bus when an error is thrown during processing', async () => {

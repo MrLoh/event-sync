@@ -29,6 +29,8 @@ export type AggregateEvent<A extends string, O extends Operation, T extends stri
 
 export type AnyAggregateEvent = AggregateEvent<string, Operation, string, any>;
 
+export type AnyRecordedAggregateEvent = AnyAggregateEvent & { recordedAt: Date; createdBy: string };
+
 export type EventsRepository = {
   /**
    * Create a new event in the repository
@@ -63,7 +65,7 @@ export type EventsRepository = {
    *
    * @returns promise of the last recorded event
    */
-  getLastRecordedEvent: () => Promise<AnyAggregateEvent | null>;
+  getLastReceivedEvent: () => Promise<AnyAggregateEvent | null>;
 };
 
 export type AccountInterface = { id: string };
@@ -285,16 +287,14 @@ export type EventServerAdapter = {
    * @param event the event to record
    * @returns promise of the recorded event with updated metadata
    */
-  record: (
-    event: AnyAggregateEvent
-  ) => Promise<AnyAggregateEvent & { recordedAt: Date; createdBy: string }>;
+  record: (event: AnyAggregateEvent) => Promise<AnyRecordedAggregateEvent>;
   /**
-   * Fetch new events since lastRecordedEventId from the server
+   * Fetch new events since lastReceivedEventId from the server
    *
-   * @param lastRecordedEventId
+   * @param lastReceivedEventId
    * @returns promise with array of the new events
    */
-  fetch: (lastRecordedEventId: string | null) => Promise<AnyAggregateEvent[]>;
+  fetch: (lastReceivedEventId: string | null) => Promise<AnyAggregateEvent[]>;
   /**
    * Subscribe to new events from the server
    *

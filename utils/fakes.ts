@@ -1,9 +1,9 @@
 import { NotFoundError, UnauthorizedError } from '../utils/errors';
 import type {
-  AccountInterface,
   AggregateEvent,
   AggregateRepository,
   AnyAggregateEvent,
+  AnyRecordedAggregateEvent,
   AuthAdapter,
   BaseState,
   ConnectionStatusAdapter,
@@ -44,7 +44,9 @@ export const createFakeAuthAdapter = (): AuthAdapter<Account> => {
  * @returns An object that implements the EventsRepository interface and also has an `events`
  * property that contains all the events in the repository
  */
-export const createFakeEventsRepository = (): EventsRepository & {
+export const createFakeEventsRepository = (
+  authAdapter: AuthAdapter<Account> = createFakeAuthAdapter()
+): EventsRepository & {
   events: AnyAggregateEvent[];
 } => {
   let events: AnyAggregateEvent[] = [];
@@ -68,17 +70,17 @@ export const createFakeEventsRepository = (): EventsRepository & {
       event.createdBy = update.createdBy;
     },
     getUnrecorded: async () => events.filter((e) => !e.recordedAt),
-    getLastRecordedEvent: async () => {
-      const recordedEvents = events
-        .filter((e) => e.recordedAt)
+    getLastReceivedEvent: async () => {
+      const deviceId = await authAdapter.getDeviceId();
+      const receivedEvents = events
+        .filter((e) => e.recordedAt && e.createdOn !== deviceId)
         .sort((a, b) => a.recordedAt!.getTime() - b.recordedAt!.getTime());
-      if (recordedEvents.length === 0) return null;
-      return recordedEvents[recordedEvents.length - 1];
+      if (receivedEvents.length === 0) return null;
+      return receivedEvents[receivedEvents.length - 1];
     },
   };
 };
 
-type AnyRecordedAggregateEvent = AnyAggregateEvent & { recordedAt: Date; createdBy: string };
 /**
  * Creates a fake event server adapter for testing purposes.
  *
@@ -110,8 +112,8 @@ export const createFakeEventServerAdapter = (
       this.recordedEvents.push(recordedEvent);
       return recordedEvent;
     },
-    async fetch(lastRecordedEventId: string | null): Promise<AnyAggregateEvent[]> {
-      const lastEvent = this.recordedEvents.find((e) => e.id === lastRecordedEventId);
+    async fetch(lastReceivedEventId: string | null): Promise<AnyAggregateEvent[]> {
+      const lastEvent = this.recordedEvents.find((e) => e.id === lastReceivedEventId);
       return this.recordedEvents.filter(
         (e) => e.recordedAt > (lastEvent?.recordedAt ?? new Date(0))
       );

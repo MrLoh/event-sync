@@ -14,10 +14,9 @@ import type {
   AggregateConfig,
   AggregateEventDispatchers,
   AggregateCommandsMaker,
-  EventServerAdapter,
   AnyAggregateEvent,
+  AnyRecordedAggregateEvent,
 } from '../utils/types';
-import { tryCatch } from '../utils/result';
 
 export type AggregateStore<
   U extends AccountInterface,
@@ -42,16 +41,15 @@ export type AggregateStore<
      * Apply an event to the aggregate store
      *
      * @remarks
-     * This handles altering the aggregate state, persisting it in the aggregate repository as well
-     * as persisting the event in the event repository and trying to record it on the event server.
-     * It will also dispatch the event on the event bus if available and everything else succeeded.
-     * This is called both from within the event dispatcher functions as well as from the broker to
-     * apply events that originated from other clients.
+     * This handles altering the aggregate state and persisting the aggregate state and event in the
+     * corresponding repositories. If everything succeeded, it will dispatch the event on the event
+     * bus. This is called both from the event creator functions as well as externally for events
+     * that originated from other clients.
      *
-     * @param event the event to apply
+     * @param event the event to processed
      * @returns true if the event was applied successfully, false if not
      */
-    applyEvent: (event: AnyAggregateEvent) => Promise<boolean>;
+    applyEvent: (event: AnyAggregateEvent) => Promise<void>;
     /**
      * Record an event to the event server and, if successful, mark it as recorded in the events
      * repository, update the aggregate state and persist it in the aggregate repository
@@ -59,7 +57,7 @@ export type AggregateStore<
      * @param event the event to record must have a matching aggregate type of the store
      * @returns true if the event was recorded successfully, false if not
      */
-    recordEvent: (event: AnyAggregateEvent) => Promise<boolean>;
+    markRecorded: (event: AnyRecordedAggregateEvent) => Promise<void>;
     /**
      * Reset state of the aggregates to the initial state and delete all entries from the aggregate
      */
@@ -123,8 +121,6 @@ export const createStore = <
     eventBus?: EventBus;
     /** The repository for persisting events*/
     eventsRepository?: EventsRepository;
-    /** The event server adapter to record events */
-    eventServerAdapter?: EventServerAdapter;
   }
 ): AggregateStore<U, A, S, E, C> => {
   const agg = 'config' in aggBuilderOrConfig ? aggBuilderOrConfig.config : aggBuilderOrConfig;
@@ -156,26 +152,20 @@ export const createStore = <
     {} as { [eventType: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
   );
 
-  const recordEvent = async (event: AnyAggregateEvent) => {
+  const markRecorded = async (event: AnyRecordedAggregateEvent) => {
     if (event.aggregateType !== agg.aggregateType) {
       throw new Error(
         `${agg.aggregateType} store cannot record event for ${event.aggregateType} aggregate`
       );
     }
-    if (event.recordedAt || !ctx.eventServerAdapter) return false;
-    const account = await ctx.authAdapter.getAccount();
-    if (!account) return false;
-    // TODO: explicitly handle errors from server like authorization errors
-    const { val: recordedEvent } = await tryCatch(() => ctx.eventServerAdapter!.record(event));
-    if (!recordedEvent) return false;
     await initialization;
     const currState = collection$.value[event.aggregateId];
     // ignore if aggregate state does not exist because it was deleted or there is a race condition
-    if (event.operation !== 'delete' && currState) {
+    if (currState) {
       const nextState = stateSchema.parse({
         ...currState,
-        createdBy: currState.createdBy ?? recordedEvent.createdBy,
-        lastRecordedAt: recordedEvent.recordedAt,
+        createdBy: currState.createdBy ?? event.createdBy,
+        lastRecordedAt: event.recordedAt,
       } as S);
       collection$.next({ ...collection$.value, [event.aggregateId]: nextState });
       if (agg.aggregateRepository) {
@@ -184,11 +174,10 @@ export const createStore = <
     }
     if (ctx.eventsRepository) {
       await ctx.eventsRepository.markRecorded(event.id, {
-        recordedAt: recordedEvent.recordedAt,
-        createdBy: recordedEvent.createdBy,
+        recordedAt: event.recordedAt,
+        createdBy: event.createdBy,
       });
     }
-    return true;
   };
 
   // Handle events for this aggregate which might come from a dispatcher or the server
@@ -204,7 +193,7 @@ export const createStore = <
     const currStoreState = collection$.value;
 
     // TODO: add support for transactional commits
-    const persistEventAndAggregate = async (state: S) => {
+    const persistAggregateAndPersistAndDispatchEvent = async (state: S) => {
       if (ctx.eventsRepository) await ctx.eventsRepository.create(event);
       if (agg.aggregateRepository) {
         if (event.operation === 'create') {
@@ -218,7 +207,11 @@ export const createStore = <
       if (ctx.eventBus) ctx.eventBus.dispatch(event);
     };
 
-    if (event.aggregateType !== agg.aggregateType) throw new Error('wrong aggregate type');
+    if (event.aggregateType !== agg.aggregateType) {
+      throw new Error(
+        `${agg.aggregateType} store cannot apply event for ${event.aggregateType} aggregate`
+      );
+    }
     try {
       switch (event.operation) {
         case 'create': {
@@ -235,8 +228,8 @@ export const createStore = <
             version: 1,
           } as S);
           collection$.next({ ...currStoreState, [event.aggregateId]: state });
-          await persistEventAndAggregate(state);
-          return true;
+          await persistAggregateAndPersistAndDispatchEvent(state);
+          break;
         }
         case 'update': {
           const reducer = eventByEventType[event.type].reduce;
@@ -254,8 +247,8 @@ export const createStore = <
             version: currState.version + 1,
           });
           collection$.next({ ...currStoreState, [event.aggregateId]: nextState });
-          await persistEventAndAggregate(nextState);
-          return true;
+          await persistAggregateAndPersistAndDispatchEvent(nextState);
+          break;
         }
         case 'delete': {
           const destructor = eventByEventType[event.type].destruct;
@@ -263,14 +256,13 @@ export const createStore = <
           if (destructor) destructor(state, event.payload);
           const { [event.aggregateId]: _, ...rest } = currStoreState;
           collection$.next(rest);
-          await persistEventAndAggregate(state);
-          return true;
+          await persistAggregateAndPersistAndDispatchEvent(state);
+          break;
         }
       }
     } catch (e) {
       if (ctx.eventBus) ctx.eventBus.terminate(e as Error);
       collection$.next(currStoreState);
-      return false;
     }
   };
 
@@ -317,8 +309,7 @@ export const createStore = <
         );
       }
       // call the apply function
-      const success = await applyEvent(event);
-      if (success) await recordEvent(event);
+      await applyEvent(event);
     };
 
     switch (eventConfig.operation) {
@@ -357,7 +348,6 @@ export const createStore = <
     'initialize',
     'initialized',
     'markRecorded',
-    'recordEvent',
     'applyEvent',
     'state',
   ];
@@ -369,7 +359,7 @@ export const createStore = <
   }
 
   return {
-    recordEvent,
+    markRecorded,
     applyEvent,
     get state() {
       return collection$.value;

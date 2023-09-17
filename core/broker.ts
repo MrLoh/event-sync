@@ -122,7 +122,17 @@ export const createBroker = <U extends AccountInterface>({
   if (onTermination) eventBus.onTermination(onTermination);
 
   const applyEvent = (event: AnyAggregateEvent) => stores[event.aggregateType].applyEvent(event);
-  const recordEvent = (event: AnyAggregateEvent) => stores[event.aggregateType].recordEvent(event);
+  const recordEvent = async (event: AnyAggregateEvent) => {
+    if (event.recordedAt) return;
+    const account = await authAdapter.getAccount();
+    if (account && eventServerAdapter) {
+      // TODO: explicitly handle things like authorization errors and implement rollbacks
+      const { val: recordedEvent } = await tryCatch(() => eventServerAdapter.record(event));
+      if (recordedEvent) stores[event.aggregateType].markRecorded(recordedEvent);
+    }
+  };
+
+  if (eventServerAdapter) eventBus.subscribe(recordEvent);
 
   let activeSync: Promise<void> | null = null;
   const sync = () => {
@@ -135,10 +145,10 @@ export const createBroker = <U extends AccountInterface>({
           await Promise.all(events.map(recordEvent));
         }
         // fetch any new events
-        const lastRecordedEvent = await eventsRepository.getLastRecordedEvent();
+        const lastReceivedEvent = await eventsRepository.getLastReceivedEvent();
         // TODO: make errors from event server adapter more specific
         const { val: newEvents } = await tryCatch(() =>
-          eventServerAdapter.fetch(lastRecordedEvent?.id || null)
+          eventServerAdapter.fetch(lastReceivedEvent?.id ?? null)
         );
         if (newEvents && newEvents.length) newEvents.map(applyEvent);
       }
@@ -185,13 +195,7 @@ export const createBroker = <U extends AccountInterface>({
   >(
     agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> }
   ) => {
-    const store = createStore(agg, {
-      createId,
-      authAdapter,
-      eventBus,
-      eventsRepository,
-      eventServerAdapter,
-    });
+    const store = createStore(agg, { createId, authAdapter, eventBus, eventsRepository });
     const aggregateType = 'config' in agg ? agg.config.aggregateType : agg.aggregateType;
     stores[aggregateType] = store;
     return store;

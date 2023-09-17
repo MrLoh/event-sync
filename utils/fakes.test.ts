@@ -143,28 +143,43 @@ describe('createFakeEventsRepository', () => {
     expect(unrecordedEvents).not.toContain(event1);
   });
 
-  it('can get the last recorded event', async () => {
-    // Given a repository with three events recorded out of order
-    const repository = createFakeEventsRepository();
-    const event1 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-28') });
-    const event2 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-29') });
-    const event3 = createEvent('TEST', 'TEST', { recordedAt: new Date('2023-08-30') });
+  it('can get the last received event', async () => {
+    // Given an auth adapter
+    const authAdapter = createFakeAuthAdapter();
+    // And a repository with three events recorded out of order
+    const repository = createFakeEventsRepository(authAdapter);
+    const event1 = createEvent('TEST', 'TEST', {
+      recordedAt: new Date('2023-08-28'),
+      createdOn: createId(),
+    });
+    const event2 = createEvent('TEST', 'TEST', {
+      recordedAt: new Date('2023-08-29'),
+      createdOn: createId(),
+    });
+    const event3 = createEvent('TEST', 'TEST', {
+      recordedAt: new Date('2023-08-30'),
+      createdOn: await authAdapter.getDeviceId(),
+    });
     await Promise.all([event2, event3, event1].map(repository.create));
-    // When getting the last recorded event
-    const lastRecordedEvent = await repository.getLastRecordedEvent();
-    // Then the last recorded event is returned
-    expect(lastRecordedEvent).toEqual(event3);
+    // When getting the last received event
+    const lastReceivedEvent = await repository.getLastReceivedEvent();
+    // Then the last event that was recorded on a different device is returned
+    expect(lastReceivedEvent).toEqual(event2);
   });
 
-  it('returns null if no events have been recorded yet', async () => {
-    // Given a repository with only unrecorded events
-    const repository = createFakeEventsRepository();
-    const event = createEvent('TEST', 'TEST');
-    await repository.create(event);
+  it('returns null if no events have been received yet', async () => {
+    // Given an auth adapter
+    const authAdapter = createFakeAuthAdapter();
+    // And a repository with only unrecorded events and events recorded on the same device
+    const repository = createFakeEventsRepository(authAdapter);
+    await repository.create(createEvent('TEST', 'TEST'));
+    await repository.create(
+      createEvent('TEST', 'TEST', { createdOn: await authAdapter.getDeviceId() })
+    );
     // When getting the last recorded event
-    const lastRecordedEvent = await repository.getLastRecordedEvent();
+    const lastReceivedEvent = await repository.getLastReceivedEvent();
     // Then null is returned
-    expect(lastRecordedEvent).toBeNull();
+    expect(lastReceivedEvent).toBeNull();
   });
 });
 
