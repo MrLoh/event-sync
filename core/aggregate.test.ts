@@ -6,6 +6,7 @@ import {
   type Account,
   createFakeAggregateRepository,
   createAggregateObject,
+  createEvent,
 } from '../utils/fakes';
 import type { BaseState } from '../utils/types';
 
@@ -82,6 +83,47 @@ describe('create aggregate config', () => {
       payloadSchema: profileSchema,
       construct: constructor,
     });
+  });
+
+  it('should generate aggregate config with event schema', () => {
+    // Given a payload schema
+    const profileSchema = z.object({ name: z.string().min(2) });
+    // And a config with a create and update event
+    const { config } = ctx
+      .aggregate('profile')
+      .schema(profileSchema)
+      .events((event) => ({
+        create: event('create')
+          .payload(profileSchema)
+          .constructor((payload) => payload),
+        update: event('update')
+          .payload(profileSchema.partial())
+          .reducer((state, payload) => ({ ...state, ...payload })),
+      }));
+    // When the event schema is used with a valid create event
+    const res1 = config.eventSchema!.safeParse(
+      createEvent('profile', 'profile.create', { payload: { name: 'test' } })
+    );
+    // Then the event should be valid
+    expect(res1.success).toBe(true);
+    // When the event schema is used with an invalid create event
+    const res2 = config.eventSchema!.safeParse(
+      createEvent('profile', 'profile.create', { payload: {} })
+    );
+    // Then the event should be invalid
+    expect(res2.success).toBe(false);
+    // When the event schema is used with a valid update event
+    const res3 = config.eventSchema!.safeParse(
+      createEvent('profile', 'profile.update', { operation: 'update', payload: {}, prevId: 'p1' })
+    );
+    // Then the event should be valid
+    expect(res3.success).toBe(true);
+    // When the event schema is used with an invalid update event
+    const res4 = config.eventSchema!.safeParse(
+      createEvent('profile', 'profile.update', { operation: 'update', payload: {}, prevId: '' })
+    );
+    // Then the event should be invalid
+    expect(res4.success).toBe(false);
   });
 
   it('should throw error if event action is not defined', () => {

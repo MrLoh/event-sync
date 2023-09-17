@@ -77,10 +77,10 @@ export type AggregateStore<
   };
 
 export const baseStateSchema: ZodSchema<BaseState> = z.object({
-  id: z.string(),
-  createdBy: z.string().optional(),
-  createdOn: z.string(),
-  lastEventId: z.string(),
+  id: z.string().nonempty(),
+  createdBy: z.string().nonempty().optional(),
+  createdOn: z.string().nonempty(),
+  lastEventId: z.string().nonempty(),
   createdAt: z.date(),
   updatedAt: z.date(),
   version: z.number(),

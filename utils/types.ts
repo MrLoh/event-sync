@@ -278,6 +278,14 @@ export type AggregateConfig<
   createId?: () => string;
   /** The default policy for all actions that determines if the account is authorized for the event */
   defaultAuthPolicy?: Policy<U, any>;
+  /** The schema of the aggregate events */
+  eventSchema?: ZodSchema<
+    {
+      [F in keyof E]: E[F] extends AggregateEventConfig<U, infer A, infer O, infer T, S, infer P>
+        ? AggregateEvent<A, O, T, P>
+        : never;
+    }[keyof E]
+  >;
 };
 
 export type EventServerAdapter = {

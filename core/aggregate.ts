@@ -242,6 +242,15 @@ export type AggregateConfigBuilder<
     }
   : {});
 
+export const baseEventSchema = z.object({
+  id: z.string().nonempty(),
+  aggregateId: z.string().nonempty(),
+  dispatchedAt: z.date(),
+  createdBy: z.string().nonempty().optional(),
+  createdOn: z.string().nonempty(),
+  recordedAt: z.date().optional(),
+});
+
 /**
  * Create an aggregate builder context
  *
@@ -412,7 +421,21 @@ export const createContext = <U extends AccountInterface>(
         if (Object.keys(aggBuilder.config.aggregateEvents).length > 0) {
           throw new Error('Events already set');
         }
-        aggBuilder.config.aggregateEvents = parseEventsConfig(maker(event));
+        const aggregateEvents = parseEventsConfig(maker(event));
+        aggBuilder.config.aggregateEvents = aggregateEvents;
+        aggBuilder.config.eventSchema = z.discriminatedUnion(
+          'type',
+          // @ts-ignore -- zod cannot understand that there is at least one value
+          Object.values(aggregateEvents).map((eventConfig) =>
+            baseEventSchema.extend({
+              operation: z.literal(eventConfig.operation),
+              aggregateType: z.literal(eventConfig.aggregateType),
+              type: z.literal(eventConfig.eventType),
+              payload: eventConfig.payloadSchema ?? z.any(),
+              prevId: eventConfig.operation === 'create' ? z.undefined() : z.string().nonempty(),
+            })
+          )
+        ) as any;
         return aggBuilder;
       },
       commands: (maker) => {
