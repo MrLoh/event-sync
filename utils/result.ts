@@ -25,7 +25,7 @@ export type PromiseResult<D, E extends Error = Error> = Promise<Result<D, E>>;
 /**
  * Creates an ok result.
  *
- * @param val the value to wrap in an ok result
+ * @param val - the value to wrap in an ok result
  * @returns the ok result
  */
 export const ok = <D>(val: D): OkResult<D> => {
@@ -36,26 +36,32 @@ export const err: {
   /**
    * Creates an err result when called with a string.
    *
-   * @param message the error message
+   * @param message - the error message
    * @returns the err result
    */
-  <E extends Error, P extends any[]>(message: string): ErrResult<E>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- needed for overload
+  <E extends Error, P extends unknown[]>(message: string): ErrResult<E>;
   /**
    * Creates an err result when called with an error.
    *
-   * @param error the error
+   * @param error - the error
    * @returns the err result
    */
-  <E extends Error, P extends any[]>(err: E): ErrResult<E>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- needed for overload
+  <E extends Error, P extends unknown[]>(err: E): ErrResult<E>;
   /**
    * Creates an err result when called with an error class.
    *
-   * @param errClass the error class
-   * @param ...args the arguments to pass to the error class constructor
+   * @param errClass - the error class
+   * @param args - the arguments to pass to the error class constructor
    * @returns the err result
    */
-  <E extends Error, P extends any[]>(errClass: new (...args: P) => E, ...args: P): ErrResult<E>;
-} = (stringOrErrOrErrClass: string | Error | (new (...args: any[]) => Error), ...args: any[]) => {
+  <E extends Error, P extends unknown[]>(errClass: new (...args: P) => E, ...args: P): ErrResult<E>;
+  // eslint-disable-next-line jsdoc/require-jsdoc -- definitions for polymorphic function are above
+} = (
+  stringOrErrOrErrClass: string | Error | (new (...args: unknown[]) => Error),
+  ...args: unknown[]
+) => {
   if (typeof stringOrErrOrErrClass === 'string') {
     return { ok: false, val: undefined, err: new Error(stringOrErrOrErrClass) };
   }
@@ -79,6 +85,7 @@ export const err: {
  * correct, thus the callback is not designed to take arguments.
  *
  * @example
+ * ```ts
  * const res: Result<Response, NetworkError> = await tryCatch(
  *   () => {
  *     return fetch('https://example.com') // becomes the result
@@ -90,19 +97,20 @@ export const err: {
  * );
  * if(res.val) return await res.val.json();
  * else // handle case that the user is offline
+ * ```
  *
- * @param expression a function that executes code that may throw an error
- * @param errorTransformer a function that transforms errors that may be thrown by the callback
+ * @param expression - a function that executes code that may throw an error
+ * @param errorTransformer - a function that transforms errors that may be thrown by the callback
  * @returns a result object
  */
-export const tryCatch = <F extends () => any | void, E extends Error = Error>(
+export const tryCatch = <F extends () => unknown | void, E extends Error = Error>(
   expression: F,
-  errorTransformer: (err: Error) => E = (err) => err as E
+  errorTransformer: (e: Error) => E = (e) => e as E
 ): ReturnType<F> extends void
   ? Result<undefined, E>
   : ReturnType<F> extends Promise<void>
   ? PromiseResult<undefined, E>
-  : ReturnType<F> extends Promise<any>
+  : ReturnType<F> extends Promise<unknown>
   ? PromiseResult<Awaited<ReturnType<F>>, E>
   : Result<ReturnType<F>, E> => {
   const makeErrorResult = (e: unknown) => {
@@ -113,15 +121,19 @@ export const tryCatch = <F extends () => any | void, E extends Error = Error>(
   try {
     const res = expression();
     if (typeof res === 'object' && res !== null && 'then' in res) {
-      // @ts-ignore typescript doesn't understand the ternary return type
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment -- typescript doesn't understand the ternary return type
+      // @ts-ignore
       return Promise.resolve(res)
         .then((val) => ok(val))
         .catch((e) => makeErrorResult(e));
     }
-    // @ts-ignore typescript doesn't understand the ternary return type
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment -- typescript doesn't understand the ternary return type
+    // @ts-ignore
     return ok(res);
+    // eslint-disable-next-line no-catch-all/no-catch-all -- this returns all errors as error results
   } catch (e) {
-    // @ts-ignore typescript doesn't understand the ternary return type
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment -- typescript doesn't understand the ternary return type
+    // @ts-ignore
     return makeErrorResult(e);
   }
 };

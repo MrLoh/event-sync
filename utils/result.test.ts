@@ -1,4 +1,4 @@
-import { type Result, err, ok, tryCatch } from './result';
+import { err, ok, tryCatch } from './result';
 
 describe('ok', () => {
   it('creates an ok result', () => {
@@ -7,7 +7,7 @@ describe('ok', () => {
     // Then the result should be an ok result
     expect(res).toMatchObject({ ok: true, err: undefined });
     // And the result should have the correct value
-    expect(res.val).toEqual('test');
+    expect(res.val).toBe('test');
   });
 });
 
@@ -20,7 +20,7 @@ describe('err', () => {
     // And the error should be an instance of Error
     expect(res.err).toBeInstanceOf(Error);
     // And the error should have the correct message
-    expect(res.err.message).toEqual('test');
+    expect(res.err.message).toBe('test');
     // And the error should have a stack trace
     expect(res.err.stack).toBeDefined();
   });
@@ -40,12 +40,12 @@ describe('err', () => {
     // And the error should be an instance of the error class
     expect(res.err).toBeInstanceOf(TestError);
     // And the error should have the correct name
-    expect(res.err.name).toEqual('TestError');
+    expect(res.err.name).toBe('TestError');
     // And the error should have the correct message
-    expect(res.err.message).toEqual('test');
+    expect(res.err.message).toBe('test');
     // And the error should have the correct cause
     expect(res.err.cause).toBeInstanceOf(Error);
-    expect(res.err.cause.message).toEqual('cause');
+    expect(res.err.cause.message).toBe('cause');
     // And the error should have a stack trace
     expect(res.err.stack).toBeDefined();
   });
@@ -58,19 +58,23 @@ describe('err', () => {
     // And the error should be an instance of Error
     expect(res.err).toBeInstanceOf(Error);
     // And the error should have the correct message
-    expect(res.err.message).toEqual('test');
+    expect(res.err.message).toBe('test');
     // And the error should have a stack trace
     expect(res.err.stack).toBeDefined();
   });
 
   it('throws an error when called with an invalid argument', () => {
     // When calling err with a random argument
-    expect(() => err(1 as any)).toThrowError(
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment -- This is intentional
+    // @ts-expect-error
+    expect(() => err(1)).toThrow(
       // Then an error should be thrown
       'err expects a string, Error, or Error class as an argument'
     );
     // When calling err with a class that is not an error
-    expect(() => err(class Test {} as any)).toThrowError(
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment -- This is intentional
+    // @ts-expect-error
+    expect(() => err(class Test {})).toThrow(
       // Then an error should be thrown
       'err expects a string, Error, or Error class as an argument'
     );
@@ -84,7 +88,7 @@ describe('tryCatch', () => {
     // Then the result should be an ok result
     expect(res).toMatchObject({ ok: true, err: undefined });
     // And the result should have the correct value
-    expect(res.val).toEqual('test');
+    expect(res.val).toBe('test');
   });
 
   it('returns an ok result for asynchronous function', async () => {
@@ -93,7 +97,7 @@ describe('tryCatch', () => {
     // Then the result should be an ok result
     expect(res).toMatchObject({ ok: true, err: undefined });
     // And the result should have the correct value
-    expect(res.val).toEqual('test');
+    expect(res.val).toBe('test');
   });
 
   it('returns an err result for synchronous function that throws', () => {
@@ -105,7 +109,7 @@ describe('tryCatch', () => {
     expect(res).toMatchObject({ ok: false, val: undefined });
     // And the result should have the correct error
     expect(res.err).toBeInstanceOf(Error);
-    expect((res.err as Error).message).toEqual('test');
+    expect((res.err as Error).message).toBe('test');
   });
 
   it('returns an err result for asynchronous function that rejects', async () => {
@@ -115,7 +119,7 @@ describe('tryCatch', () => {
     expect(res).toMatchObject({ ok: false, val: undefined });
     // And the result should have the correct error
     expect(res.err).toBeInstanceOf(Error);
-    expect((res.err as Error).message).toEqual('test');
+    expect((res.err as Error).message).toBe('test');
   });
 
   it('returns an err result if function throws a non-error', async () => {
@@ -125,7 +129,7 @@ describe('tryCatch', () => {
     expect(res).toMatchObject({ ok: false, val: undefined });
     // And the result should have the correct error
     expect(res.err).toBeInstanceOf(Error);
-    expect((res.err as Error).message).toEqual("Unexpected throw value 'test' of type string");
+    expect((res.err as Error).message).toBe("Unexpected throw value 'test' of type string");
   });
 
   it('can take a custom error transformer', async () => {
@@ -144,11 +148,11 @@ describe('tryCatch', () => {
     expect(res).toMatchObject({ ok: false, val: undefined });
     // And the result should have the correct error
     expect(res.err).toBeInstanceOf(AnticipatedError);
-    expect((res.err as AnticipatedError).name).toEqual('AnticipatedError');
+    expect((res.err as AnticipatedError).name).toBe('AnticipatedError');
     // When calling the function with a function that throws an unexpected error
-    expect(
+    await expect(
       () => tryCatch(() => Promise.reject(new Error('unexpected error')), errorTransformer)
       // Then an error should be thrown
-    ).rejects.toThrowError('unexpected error');
+    ).rejects.toThrow('unexpected error');
   });
 });
