@@ -110,11 +110,11 @@ export const createStore = <
   ctx: {
     /**
      * Method to generate an id for events, will be used as fallback for aggregates as well if no
-     * createId function is specified in the aggregate config
+     * create aggregate id function is specified in the aggregate config
      *
      * @returns a unique id
      */
-    createId: () => string;
+    createEventId: () => string;
     /** The auth adapter to get device ids and accounts */
     authAdapter: AuthAdapter<U>;
     /** The main event bus */
@@ -271,7 +271,6 @@ export const createStore = <
   // 2. checks authorization, and
   // 3. adds metadata
   // 4. call apply to update and persist the state
-  // 5. try recording the event to the event server
   const dispatchers = mapObject(agg.aggregateEvents, (eventConfig) => {
     const dispatch = async (aggregateId: string, payload: any, lastEventId?: string) => {
       // generate event
@@ -291,7 +290,7 @@ export const createStore = <
       const deviceId = await ctx.authAdapter.getDeviceId();
       const account = await ctx.authAdapter.getAccount();
       const event = {
-        id: ctx.createId(),
+        id: ctx.createEventId(),
         operation: eventConfig.operation,
         aggregateType: agg.aggregateType,
         aggregateId,
@@ -303,7 +302,8 @@ export const createStore = <
         prevId: lastEventId,
       };
       // check authorization
-      if (!eventConfig.authPolicy(account, event)) {
+      const state = collection$.value[aggregateId];
+      if (!eventConfig.dispatchPolicy(account, state, event)) {
         throw new UnauthorizedError(
           `Account ${account?.id} is not authorized to dispatch event ${event.type}`
         );
@@ -316,7 +316,7 @@ export const createStore = <
       case 'create':
         return async (payload: any): Promise<string> => {
           await initialization;
-          const id = (agg.createId ?? ctx.createId)();
+          const id = (agg.createAggregateId ?? ctx.createEventId)();
           await dispatch(id, payload);
           return id;
         };

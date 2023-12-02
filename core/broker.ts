@@ -15,7 +15,7 @@ import type {
   EventServerAdapter,
   EventsRepository,
   Operation,
-  Policy,
+  EventDispatchPolicy,
   AggregateCommandsMaker,
 } from '../utils/types';
 
@@ -23,7 +23,7 @@ export type Broker<U extends AccountInterface> = {
   /** The auth adapter to get device ids and accounts */
   authAdapter: AuthAdapter<U>;
   /** The id generator */
-  createId: () => string;
+  createEventId: () => string;
   /** The repository for persisting events */
   eventsRepository?: EventsRepository;
   /** The main event bus */
@@ -52,8 +52,8 @@ export type Broker<U extends AccountInterface> = {
   aggregate: <A extends string>(
     aggregateType: A,
     options?: {
-      createId?: () => string;
-      defaultPolicy?: Policy<U, unknown>;
+      createAggregateId?: () => string;
+      defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
     }
   ) => AggregateConfigBuilder<U, A, BaseState, {}, () => {}, true>;
   /**
@@ -100,8 +100,8 @@ const connectionStatusObservable = (connectionStatusAdapter?: ConnectionStatusAd
 
 export const createBroker = <U extends AccountInterface>({
   authAdapter,
-  createId,
-  defaultPolicy,
+  createEventId,
+  defaultEventDispatchPolicy,
   eventsRepository,
   eventServerAdapter,
   connectionStatusAdapter,
@@ -109,8 +109,8 @@ export const createBroker = <U extends AccountInterface>({
   onTermination,
 }: {
   authAdapter: AuthAdapter<U>;
-  createId: () => string;
-  defaultPolicy?: Policy<U, unknown>;
+  createEventId: () => string;
+  defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
   eventsRepository?: EventsRepository;
   eventServerAdapter?: EventServerAdapter;
   connectionStatusAdapter?: ConnectionStatusAdapter;
@@ -195,18 +195,26 @@ export const createBroker = <U extends AccountInterface>({
   >(
     agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> }
   ) => {
-    const store = createStore(agg, { createId, authAdapter, eventBus, eventsRepository });
+    const store = createStore(agg, {
+      createEventId,
+      authAdapter,
+      eventBus,
+      eventsRepository,
+    });
     const aggregateType = 'config' in agg ? agg.config.aggregateType : agg.aggregateType;
     stores[aggregateType] = store;
     return store;
   };
 
-  const aggBuilderCtx = createContext<U>({ createId, defaultPolicy });
+  const aggBuilderCtx = createContext<U>({
+    createEventId,
+    defaultEventDispatchPolicy,
+  });
   const aggregate = <A extends string>(
     aggregateType: A,
     options?: {
-      createId?: () => string;
-      defaultPolicy?: Policy<U, unknown>;
+      createAggregateId?: () => string;
+      defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
     }
   ) => aggBuilderCtx.aggregate(aggregateType, { ...options, register });
 
@@ -219,7 +227,7 @@ export const createBroker = <U extends AccountInterface>({
   };
 
   return {
-    createId,
+    createEventId,
     authAdapter,
     eventBus,
     register,

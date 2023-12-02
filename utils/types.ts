@@ -143,8 +143,9 @@ export type AggregateRepository<S extends BaseState> = {
   deleteAll: () => Promise<void>;
 };
 
-export type Policy<U extends AccountInterface, P> = (
+export type EventDispatchPolicy<U extends AccountInterface, S extends BaseState, P> = (
   account: U | null,
+  aggregate: S,
   event: AggregateEvent<string, Operation, string, P>
 ) => boolean;
 
@@ -163,7 +164,7 @@ export type AggregateEventConfig<
   /** The operation the command performs */
   operation: O;
   /** The policy that determines if the account is authorized for the event */
-  authPolicy: Policy<U, P>;
+  dispatchPolicy: EventDispatchPolicy<U, S, P>;
   /** The schema of the payload */
   payloadSchema?: ZodSchema<P>;
 } & (O extends 'create'
@@ -275,9 +276,9 @@ export type AggregateConfig<
   /** Factory for additional command functions that can be called on the aggregate */
   aggregateCommandMaker?: C;
   /** Function to generate unique IDs */
-  createId?: () => string;
+  createAggregateId?: () => string;
   /** The default policy for all actions that determines if the account is authorized for the event */
-  defaultAuthPolicy?: Policy<U, any>;
+  defaultEventDispatchPolicy?: EventDispatchPolicy<U, S, any>;
   /** The schema of the aggregate events */
   eventSchema?: ZodSchema<
     {

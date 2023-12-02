@@ -4,7 +4,6 @@ import { createEventBus } from './event-bus';
 import {
   ConflictError,
   InvalidInputError,
-  NetworkError,
   NotFoundError,
   UnauthorizedError,
 } from '../utils/errors';
@@ -34,7 +33,7 @@ describe('create store', () => {
   const setup = <
     O extends {
       aggregateRepository?: AggregateRepository<Profile & BaseState>;
-      authPolicy?: (account: Account | null) => boolean;
+      dispatchPolicy?: (account: Account | null) => boolean;
       aggregateCommandMaker?: AggregateCommandsMaker<
         Account,
         'PROFILE',
@@ -49,7 +48,7 @@ describe('create store', () => {
       overwrites?.aggregateRepository ?? createFakeAggregateRepository<Profile & BaseState>();
     const authAdapter = createFakeAuthAdapter();
     const context = {
-      createId,
+      createEventId: createId,
       authAdapter,
       eventBus: createEventBus(),
       eventsRepository: createFakeEventsRepository(),
@@ -64,8 +63,8 @@ describe('create store', () => {
             eventType: 'PROFILE_CREATED',
             operation: 'create' as const,
             payloadSchema: profileSchema,
-            authPolicy:
-              overwrites?.authPolicy ??
+            dispatchPolicy:
+              overwrites?.dispatchPolicy ??
               ((account: Account | null) => account?.roles.includes('creator') ?? false),
             construct: (payload: Profile) => payload,
           },
@@ -74,8 +73,8 @@ describe('create store', () => {
             eventType: 'PROFILE_UPDATED',
             operation: 'update' as const,
             payloadSchema: profileSchema.partial(),
-            authPolicy:
-              overwrites?.authPolicy ??
+            dispatchPolicy:
+              overwrites?.dispatchPolicy ??
               ((account: Account | null) => account?.roles.includes('updater') ?? false),
             reduce: (state: Profile, payload: Partial<Profile>) => ({ ...state, ...payload }),
           },
@@ -84,8 +83,8 @@ describe('create store', () => {
             eventType: 'PROFILE_DELETED',
             operation: 'delete' as const,
             payloadSchema: z.undefined(),
-            authPolicy:
-              overwrites?.authPolicy ??
+            dispatchPolicy:
+              overwrites?.dispatchPolicy ??
               ((account: Account | null) => account?.roles.includes('updater') ?? false),
             destruct: () => {},
           },
@@ -399,13 +398,13 @@ describe('create store', () => {
               eventType: 'PROFILE_INITIALIZED',
               operation: 'create' as const,
               payloadSchema: profileSchema,
-              authPolicy: () => true,
+              dispatchPolicy: () => true,
               construct: () => ({}),
             },
           },
         },
         {
-          createId,
+          createEventId: createId,
           authAdapter: createFakeAuthAdapter(),
           eventBus: createEventBus(),
         }
@@ -423,7 +422,7 @@ describe('create store', () => {
           aggregateCommandMaker: () => ({ initialize: () => {} }),
         },
         {
-          createId,
+          createEventId: createId,
           authAdapter: createFakeAuthAdapter(),
           eventBus: createEventBus(),
         }
@@ -465,7 +464,7 @@ describe('create store', () => {
 
   it('can mark events as recorded', async () => {
     // Given a store with an event server adapter and no account
-    const { store, context, aggregateRepository } = setup({ authPolicy: () => true });
+    const { store, context, aggregateRepository } = setup({ dispatchPolicy: () => true });
     jest.spyOn(context.authAdapter, 'getAccount').mockImplementationOnce(async () => null);
     // And an existing profile
     const id = await store.create({ name: 'tester' });
@@ -507,7 +506,7 @@ describe('create store', () => {
 
   it('throws error when trying to record event for other aggregate', async () => {
     // Given a store with an event server adapter
-    const { store, context } = setup({ authPolicy: () => true });
+    const { store } = setup({ dispatchPolicy: () => true });
     // And an event for a different aggregate
     const event = createEvent('OTHER', 'SOMETHING_HAPPENED', {
       createdBy: createId(),
@@ -588,14 +587,14 @@ describe('create store', () => {
             eventType: 'WILL_FAIL',
             operation: 'create' as const,
             payloadSchema: z.undefined(),
-            authPolicy: () => true,
+            dispatchPolicy: () => true,
             construct: () => {
               throw new Error('failed');
             },
           },
         },
       },
-      { createId, authAdapter: createFakeAuthAdapter(), eventBus }
+      { createEventId: createId, authAdapter: createFakeAuthAdapter(), eventBus }
     );
     // And a subscriber to the store
     const subscriber = jest.fn();

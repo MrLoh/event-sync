@@ -9,7 +9,7 @@ import type {
   BaseState,
   Operation,
   AggregateEvent,
-  Policy,
+  EventDispatchPolicy,
   AggregateConfig,
   AggregateCommandsContext,
   AggregateCommandsMaker,
@@ -30,7 +30,7 @@ type AggregateEventConfigBuilder<
     aggregateType: A;
     eventType: T;
     operation: O;
-    authPolicy: Policy<U, P>;
+    dispatchPolicy: EventDispatchPolicy<U, S, P>;
     payloadSchema?: ZodSchema<P>;
   } & (O extends 'create'
     ? {
@@ -70,11 +70,11 @@ type AggregateEventConfigBuilder<
   /**
    * Set the policy that determines if the account is authorized for the event
    *
-   * @param policy the policy function
+   * @param dispatchPolicy the policy function
    * @returns the event builder for chaining
    */
   policy: (
-    policy: (account: U | null, event: AggregateEvent<string, Operation, string, P>) => boolean
+    dispatchPolicy: EventDispatchPolicy<U, S, P>
   ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
 } & (O extends 'create'
   ? {
@@ -152,13 +152,6 @@ export type AggregateConfigBuilder<
     C,
     registerable
   >;
-  /**
-   * Set the default policy that determines if the account is authorized for the event
-   *
-   * @param policy the default policy function
-   * @returns the event builder for chaining
-   */
-  policy: (policy: Policy<U, unknown>) => AggregateConfigBuilder<U, A, S, E, C, registerable>;
   /**
    * Set the repository for persisting the aggregate state
    *
@@ -259,8 +252,8 @@ export const baseEventSchema = z.object({
  */
 export const createContext = <U extends AccountInterface>(
   ctx: {
-    createId?: () => string;
-    defaultPolicy?: Policy<U, unknown>;
+    createEventId?: () => string;
+    defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
   } = {}
 ): {
   aggregate: <
@@ -271,13 +264,12 @@ export const createContext = <U extends AccountInterface>(
   >(
     aggregateType: A,
     options?: {
-      createId?: () => string;
+      createAggregateId?: () => string;
+      defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
       register?: R;
     }
   ) => AggregateConfigBuilder<U, A, BaseState, {}, () => {}, R extends undefined ? false : true>;
 } => {
-  let defaultPolicy = ctx.defaultPolicy;
-
   /**
    * Define an aggregate
    *
@@ -293,7 +285,8 @@ export const createContext = <U extends AccountInterface>(
   >(
     aggregateType: A,
     options?: {
-      createId?: () => string;
+      createAggregateId?: () => string;
+      defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
       register?: R;
     }
   ) => {
@@ -310,7 +303,7 @@ export const createContext = <U extends AccountInterface>(
         config: {
           aggregateType,
           operation,
-          authPolicy: defaultPolicy,
+          dispatchPolicy: options?.defaultEventDispatchPolicy ?? ctx.defaultEventDispatchPolicy,
           payloadSchema: operation === 'delete' ? z.undefined() : undefined,
         },
         type: (type) => {
@@ -321,8 +314,8 @@ export const createContext = <U extends AccountInterface>(
           eventBuilder.config.payloadSchema = schema;
           return eventBuilder;
         },
-        policy: (policy) => {
-          eventBuilder.config.authPolicy = policy;
+        policy: (dispatchPolicy) => {
+          eventBuilder.config.dispatchPolicy = dispatchPolicy;
           return eventBuilder;
         },
         constructor: (constructor) => {
@@ -358,8 +351,8 @@ export const createContext = <U extends AccountInterface>(
       [fn: string]: { config: AggregateEventConfigBuilder<U, A, any, any, any, any>['config'] };
     }) => {
       return mapObject(eventBuilders, ({ config }, key) => {
-        if (!config.authPolicy) {
-          throw new Error(`missing policy definition for ${String(key)} event`);
+        if (!config.dispatchPolicy) {
+          throw new Error(`missing dispatch policy definition for ${String(key)} event`);
         }
         if (!config.construct && config.operation === 'create') {
           throw new Error(`missing constructor definition for ${String(key)} event`);
@@ -377,9 +370,10 @@ export const createContext = <U extends AccountInterface>(
     const aggBuilder: AggregateConfigBuilder<U, A, any, any, any> = {
       config: {
         aggregateType: aggregateType,
-        createId: options?.createId || ctx.createId,
+        createAggregateId: options?.createAggregateId || ctx.createEventId,
         aggregateEvents: {},
-        defaultAuthPolicy: ctx.defaultPolicy,
+        defaultEventDispatchPolicy:
+          options?.defaultEventDispatchPolicy ?? ctx.defaultEventDispatchPolicy,
       } as AggregateConfig<U, A, any, any, any>,
       schema: (schema, schemaOptions) => {
         if (aggBuilder.config.aggregateSchema) throw new Error('Schema already set');
@@ -399,17 +393,6 @@ export const createContext = <U extends AccountInterface>(
             delete: event('delete').payload(z.undefined()),
           });
         }
-        return aggBuilder;
-      },
-      policy: (policy) => {
-        if (
-          aggBuilder.config.defaultAuthPolicy &&
-          aggBuilder.config.defaultAuthPolicy !== ctx.defaultPolicy
-        ) {
-          throw new Error('Policy already set');
-        }
-        aggBuilder.config.defaultAuthPolicy = policy;
-        defaultPolicy = policy;
         return aggBuilder;
       },
       repository: (repository) => {

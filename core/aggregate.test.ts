@@ -11,7 +11,10 @@ import {
 import type { BaseState } from '../utils/types';
 
 describe('create aggregate config', () => {
-  const ctx = createContext<Account>({ createId, defaultPolicy: () => true });
+  const ctx = createContext<Account>({
+    createEventId: createId,
+    defaultEventDispatchPolicy: () => true,
+  });
 
   it('should generate aggregate config with type', () => {
     // When a new config is constructed with a type
@@ -163,29 +166,27 @@ describe('create aggregate config', () => {
   it('can define specific policy for event', () => {
     // Given an aggregate with a default policy
     const base = ctx
-      .aggregate('profile')
-      .policy(() => false)
+      .aggregate('profile', { defaultEventDispatchPolicy: () => false })
       .schema(z.object({ name: z.string().min(2) }));
     // When defining a event with a policy
-    const eventPolicy = jest.fn(() => true);
+    const eventDispatchPolicy = jest.fn(() => true);
     const { config } = base.events((event) => ({
       update: event('update')
         .payload(z.object({ name: z.string().min(2) }))
-        .policy(eventPolicy)
+        .policy(eventDispatchPolicy)
         .reducer((state, payload) => ({ ...state, ...payload })),
     }));
     // Then the event policy should be used
-    expect(config.aggregateEvents.update.authPolicy).toBe(eventPolicy);
-    config.aggregateEvents.update.authPolicy({ id: 'tester', roles: [] }, {} as any);
-    expect(eventPolicy).toHaveBeenCalled();
+    expect(config.aggregateEvents.update.dispatchPolicy).toBe(eventDispatchPolicy);
+    config.aggregateEvents.update.dispatchPolicy({ id: 'tester', roles: [] }, {} as any, {} as any);
+    expect(eventDispatchPolicy).toHaveBeenCalled();
   });
 
   it('can define default policy on aggregate', () => {
     // Given a default policy is defined on the aggregate
     const aggregatePolicy = jest.fn(() => true);
     const base = ctx
-      .aggregate('profile')
-      .policy(aggregatePolicy)
+      .aggregate('profile', { defaultEventDispatchPolicy: aggregatePolicy })
       .schema(z.object({ name: z.string().min(2) }));
     // When the event policy is not defined
     const { config } = base.events((event) => ({
@@ -194,26 +195,19 @@ describe('create aggregate config', () => {
         .destructor(() => {}),
     }));
     // Then the aggregate policy should be used
-    expect(config.aggregateEvents.delete.authPolicy).toBe(aggregatePolicy);
-    config.aggregateEvents.delete.authPolicy({ id: 'tester', roles: [] }, {} as any);
+    expect(config.aggregateEvents.delete.dispatchPolicy).toBe(aggregatePolicy);
+    config.aggregateEvents.delete.dispatchPolicy({ id: 'tester', roles: [] }, {} as any, {} as any);
     // And the default policy should be set on the config
-    expect(config.defaultAuthPolicy).toBe(aggregatePolicy);
-  });
-
-  it('throws error if trying to overwrite default auth policy definition', () => {
-    // Given a default auth policy is already defined
-    const base = ctx.aggregate('profile').policy(() => true);
-    // When trying to overwrite the default auth policy
-    expect(
-      () => base.policy(() => true)
-      // Then an error should be thrown
-    ).toThrowError('Policy already set');
+    expect(config.defaultEventDispatchPolicy).toBe(aggregatePolicy);
   });
 
   it('can define default policy on context', () => {
     // Given a default policy is defined on the context
     const contextPolicy = jest.fn(() => true);
-    const ctx = createContext<Account>({ createId, defaultPolicy: contextPolicy });
+    const ctx = createContext<Account>({
+      createEventId: createId,
+      defaultEventDispatchPolicy: contextPolicy,
+    });
     // When the aggregate and event policy is not defined
     const { config } = ctx
       .aggregate('profile')
@@ -224,11 +218,11 @@ describe('create aggregate config', () => {
           .constructor((state) => state),
       }));
     // Then the context policy should be used
-    expect(config.aggregateEvents.create.authPolicy).toBe(contextPolicy);
-    config.aggregateEvents.create.authPolicy({ id: 'tester', roles: [] }, {} as any);
+    expect(config.aggregateEvents.create.dispatchPolicy).toBe(contextPolicy);
+    config.aggregateEvents.create.dispatchPolicy({ id: 'tester', roles: [] }, {} as any, {} as any);
     expect(contextPolicy).toHaveBeenCalled();
     // And the default policy should be set on the config
-    expect(config.defaultAuthPolicy).toBe(contextPolicy);
+    expect(config.defaultEventDispatchPolicy).toBe(contextPolicy);
   });
 
   it('throw error if no policy is defined', () => {
@@ -244,18 +238,18 @@ describe('create aggregate config', () => {
             .constructor((state) => state),
         }))
       // Then an error should be thrown
-    ).toThrowError('missing policy definition');
+    ).toThrowError('missing dispatch policy definition for create event');
   });
 
   it('can define create id on context', () => {
     // Given a create id function is defined on the context
     const createId = jest.fn(() => 'test');
-    const ctx = createContext<Account>({ createId });
+    const ctx = createContext<Account>({ createEventId: createId });
     // When the aggregate is defined without a create id function
     const { config } = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // Then the context create id function should be used
-    expect(config.createId).toBe(createId);
-    config.createId?.();
+    expect(config.createAggregateId).toBe(createId);
+    config.createAggregateId?.();
     expect(createId).toHaveBeenCalled();
   });
 
@@ -263,11 +257,11 @@ describe('create aggregate config', () => {
     // Given a create id function is defined on the aggregate
     const createId = jest.fn(() => 'test');
     const { config } = ctx
-      .aggregate('profile', { createId })
+      .aggregate('profile', { createAggregateId: createId })
       .schema(z.object({ name: z.string().min(2) }));
     // Then the aggregate create id function should be used
-    expect(config.createId).toBe(createId);
-    config.createId?.();
+    expect(config.createAggregateId).toBe(createId);
+    config.createAggregateId?.();
     expect(createId).toHaveBeenCalled();
   });
 

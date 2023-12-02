@@ -27,8 +27,8 @@ describe('create broker', () => {
       overwrites?.eventServerAdapter ?? createFakeEventServerAdapter(authAdapter);
     const connectionStatusAdapter = createFakeConnectionStatusAdapter();
     const broker = createBroker({
-      createId,
-      defaultPolicy: () => true,
+      createEventId: createId,
+      defaultEventDispatchPolicy: () => true,
       authAdapter,
       eventsRepository,
       eventServerAdapter,
@@ -56,15 +56,19 @@ describe('create broker', () => {
     // Given a broker with a create id and a default policy function
     const createId = jest.fn(() => 'test');
     const defaultPolicy = jest.fn(() => true);
-    const broker = createBroker({ authAdapter: createFakeAuthAdapter(), createId, defaultPolicy });
+    const broker = createBroker({
+      authAdapter: createFakeAuthAdapter(),
+      createEventId: createId,
+      defaultEventDispatchPolicy: defaultPolicy,
+    });
     // When an aggregate config is defined
     const { config } = broker
       .aggregate('profile')
       .schema(z.object({ name: z.string() }), { createDefaultEvents: true });
     // Then is has the correct create id function
-    expect(config.createId).toBe(createId);
+    expect(config.createAggregateId).toBe(createId);
     // And it has the correct default policy
-    expect(config.aggregateEvents.create.authPolicy).toBe(defaultPolicy);
+    expect(config.aggregateEvents.create.dispatchPolicy).toBe(defaultPolicy);
   });
 
   it('can act as context to create aggregate store', async () => {
@@ -75,8 +79,8 @@ describe('create broker', () => {
     const eventsRepository = createFakeEventsRepository();
     jest.spyOn(eventsRepository, 'create');
     const broker = createBroker({
-      createId,
-      defaultPolicy: () => true,
+      createEventId: createId,
+      defaultEventDispatchPolicy: () => true,
       authAdapter,
       eventsRepository,
     });
