@@ -27,7 +27,12 @@ import type { Account } from '../utils/fakes';
 describe('create store', () => {
   jest.useFakeTimers({ timerLimit: 100 });
 
-  const profileSchema = z.object({ name: z.string().min(2), accountId: z.string().optional() });
+  const profileSchema = z.object({
+    name: z.string().min(2),
+    accountId: z.string().optional(),
+    upgradedAt: z.date().optional(),
+    tags: z.array(z.string()).optional(),
+  });
   type Profile = z.infer<typeof profileSchema>;
 
   const setup = <
@@ -211,6 +216,41 @@ describe('create store', () => {
       // And no state is updated
       expect(store.state).toEqual({});
     }
+  });
+
+  it('event ensures encoding safety', async () => {
+    // Given a store
+    const { store, context } = setup();
+    // And a subscriber to the event bus
+    const subscriber = jest.fn();
+    context.eventBus.subscribe(subscriber);
+    // And a custom serializable class
+    class SerializableSet extends Set {
+      toJSON() {
+        return [...this];
+      }
+    }
+    // When a payload with dates and custom serializable data is passed to a event
+    await store.create({
+      name: 'test',
+      upgradedAt: new Date('2023-12-01'),
+      tags: new SerializableSet(['a', 'b', 'c']) as unknown as string[],
+    });
+    await jest.advanceTimersByTimeAsync(0);
+    // Then an event is dispatched
+    expect(subscriber).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'PROFILE_CREATED',
+        aggregateId: expect.any(String),
+        payload: {
+          name: 'test',
+          // And dates are kept as dates
+          upgradedAt: expect.any(Date),
+          // And custom serializable data is serialized
+          tags: ['a', 'b', 'c'],
+        },
+      })
+    );
   });
 
   it('event validates authorization', async () => {

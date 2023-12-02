@@ -89,7 +89,11 @@ export const baseStateSchema: ZodSchema<BaseState> = z.object({
 
 /** will JSON stringify and parse to for example remove undefined values */
 export const ensureEncodingSafety = <O extends Record<string, any>>(obj: O): O => {
-  return JSON.parse(JSON.stringify(obj));
+  return JSON.parse(JSON.stringify(obj), (_, value: unknown) =>
+    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
+      ? new Date(value)
+      : value
+  );
 };
 
 /**
