@@ -22,4 +22,4 @@ yarn-error.log
 #
 .github/test-results/**/*
 
-!.github/test-results/coverage-summary.json
+!.github/test-results/coverage-badge.svg
