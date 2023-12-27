@@ -108,7 +108,7 @@ export const createStore = <
   A extends string,
   S extends BaseState,
   E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
-  C extends AggregateCommandsMaker<U, A, S, E>
+  C extends AggregateCommandsMaker<U, A, S, E> = () => {}
 >(
   aggBuilderOrConfig: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> },
   ctx: {
@@ -216,10 +216,14 @@ export const createStore = <
         `${agg.aggregateType} store cannot apply event for ${event.aggregateType} aggregate`
       );
     }
+    if (event.operation !== 'create' && !currStoreState[event.aggregateId]) {
+      throw new NotFoundError(`${event.aggregateType}:${event.aggregateId} not found`);
+    }
+
     try {
       switch (event.operation) {
         case 'create': {
-          const constructor = eventByEventType[event.type].construct;
+          const constructor = eventByEventType[event.type]!.construct;
           const state = stateSchema.parse({
             ...constructor!(event.payload),
             id: event.aggregateId,
@@ -236,8 +240,8 @@ export const createStore = <
           break;
         }
         case 'update': {
-          const reducer = eventByEventType[event.type].reduce;
-          const currState = collection$.value[event.aggregateId];
+          const reducer = eventByEventType[event.type]!.reduce;
+          const currState = collection$.value[event.aggregateId]!;
           const nextState: S = stateSchema.parse({
             ...currState,
             ...reducer!(currState, event.payload),
@@ -255,8 +259,8 @@ export const createStore = <
           break;
         }
         case 'delete': {
-          const destructor = eventByEventType[event.type].destruct;
-          const state = collection$.value[event.aggregateId];
+          const destructor = eventByEventType[event.type]!.destruct;
+          const state = collection$.value[event.aggregateId]!;
           if (destructor) destructor(state, event.payload);
           const { [event.aggregateId]: _, ...rest } = currStoreState;
           collection$.next(rest);
@@ -306,7 +310,7 @@ export const createStore = <
         prevId: lastEventId,
       };
       // check authorization
-      const state = collection$.value[aggregateId];
+      const state = collection$.value[aggregateId] ?? null;
       if (!eventConfig.dispatchPolicy(account, state, event)) {
         throw new UnauthorizedError(
           `Account ${account?.id} is not authorized to dispatch event ${event.type}`
@@ -329,9 +333,7 @@ export const createStore = <
         return async (id: string, payload?: any): Promise<void> => {
           await initialization;
           const currState = collection$.value[id];
-          if (!currState) {
-            throw new NotFoundError(`${agg.aggregateType} aggregate with id ${id} not found`);
-          }
+          if (!currState) throw new NotFoundError(`${agg.aggregateType}:${id} not found`);
           await dispatch(id, payload, currState.lastEventId);
           return;
         };

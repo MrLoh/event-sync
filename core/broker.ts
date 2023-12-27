@@ -121,14 +121,14 @@ export const createBroker = <U extends AccountInterface>({
   const eventBus = createEventBus();
   if (onTermination) eventBus.onTermination(onTermination);
 
-  const applyEvent = (event: AnyAggregateEvent) => stores[event.aggregateType].applyEvent(event);
+  const applyEvent = (event: AnyAggregateEvent) => stores[event.aggregateType]!.applyEvent(event);
   const recordEvent = async (event: AnyAggregateEvent) => {
     if (event.recordedAt) return;
     const account = await authAdapter.getAccount();
     if (account && eventServerAdapter) {
       // TODO: explicitly handle things like authorization errors and implement rollbacks
       const { val: recordedEvent } = await tryCatch(() => eventServerAdapter.record(event));
-      if (recordedEvent) stores[event.aggregateType].markRecorded(recordedEvent);
+      if (recordedEvent) stores[event.aggregateType]!.markRecorded(recordedEvent);
     }
   };
 

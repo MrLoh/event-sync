@@ -65,7 +65,7 @@ export const createFakeEventsRepository = (
     },
     markRecorded: async (eventId: string, update: { recordedAt: Date; createdBy: string }) => {
       const event = events.find((e) => e.id === eventId);
-      if (!event) throw new NotFoundError(`Event ${eventId} not found`);
+      if (!event) throw new NotFoundError(`event:${eventId} not found`);
       event.recordedAt = update.recordedAt;
       event.createdBy = update.createdBy;
     },
@@ -76,7 +76,7 @@ export const createFakeEventsRepository = (
         .filter((e) => e.recordedAt && e.createdOn !== deviceId)
         .sort((a, b) => a.recordedAt!.getTime() - b.recordedAt!.getTime());
       if (receivedEvents.length === 0) return null;
-      return receivedEvents[receivedEvents.length - 1];
+      return receivedEvents[receivedEvents.length - 1] ?? null;
     },
   };
 };
@@ -138,7 +138,7 @@ export const createFakeEventServerAdapter = (
 export const createFakeAggregateRepository = <S extends BaseState>(): AggregateRepository<S> => {
   const storage: { [id: string]: S } = {};
   return {
-    getOne: async (id: string) => storage[id],
+    getOne: async (id: string) => storage[id] ?? null,
     getAll: async () => storage,
     create: async (state: S) => {
       storage[state.id] = state;

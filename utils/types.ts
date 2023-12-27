@@ -111,7 +111,7 @@ export type AggregateRepository<S extends BaseState> = {
    * @param id the id of the aggregate
    * @returns promise of the state of the aggregate
    */
-  getOne: (id: string) => Promise<S>;
+  getOne: (id: string) => Promise<S | null>;
   /**
    * Get states of all aggregates
    *
@@ -145,7 +145,7 @@ export type AggregateRepository<S extends BaseState> = {
 
 export type EventDispatchPolicy<U extends AccountInterface, S extends BaseState, P> = (
   account: U | null,
-  aggregate: S,
+  aggregate: S | null,
   event: AggregateEvent<string, Operation, string, P>
 ) => boolean;
 

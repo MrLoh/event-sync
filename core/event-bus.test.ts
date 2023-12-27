@@ -36,7 +36,7 @@ describe('event bus', () => {
   it('replays past events to new subscribers', () => {
     // Given an event bus to which a few events have been dispatched already
     const eventBus = createEventBus();
-    const testEvents = [createEvent('TEST', 'TEST'), createEvent('TEST', 'TEST')];
+    const testEvents = [createEvent('TEST', 'TEST'), createEvent('TEST', 'TEST')] as const;
     eventBus.dispatch(testEvents[0]);
     eventBus.dispatch(testEvents[1]);
     // When a subscriber is added

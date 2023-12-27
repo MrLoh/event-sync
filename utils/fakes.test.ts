@@ -1,4 +1,4 @@
-import { UnauthorizedError } from './errors';
+import { NotFoundError, UnauthorizedError } from './errors';
 import {
   createId,
   createFakeAuthAdapter,
@@ -110,8 +110,8 @@ describe('createFakeEventsRepository', () => {
     const accountId = createId();
     await repository.markRecorded(event.id, { recordedAt, createdBy: accountId });
     // Then the recorded time and created at are updated
-    expect(repository.events[0].recordedAt).toBe(recordedAt);
-    expect(repository.events[0].createdBy).toBe(accountId);
+    expect(repository.events[0]?.recordedAt).toBe(recordedAt);
+    expect(repository.events[0]?.createdBy).toBe(accountId);
   });
 
   it('throws an error if event to be marked as recorded is not found', async () => {
@@ -122,7 +122,7 @@ describe('createFakeEventsRepository', () => {
       repository.markRecorded('1', { recordedAt: new Date(), createdBy: createId() })
     ).rejects.toThrow(
       // Then an error is thrown
-      'Event 1 not found'
+      'event:1 not found'
     );
   });
 
@@ -198,9 +198,9 @@ describe('createFakeEventServerAdapter', () => {
       expect.objectContaining({ id: event.id })
     );
     // And the event has a recorded time
-    expect(eventServerAdapter.recordedEvents[0].recordedAt).toEqual(expect.any(Date));
+    expect(eventServerAdapter.recordedEvents[0]?.recordedAt).toEqual(expect.any(Date));
     // And the event has a recorded by
-    expect(eventServerAdapter.recordedEvents[0].createdBy).toBe(account?.id);
+    expect(eventServerAdapter.recordedEvents[0]?.createdBy).toBe(account?.id);
   });
 
   it('returns existing event when recording duplicate event', async () => {
@@ -358,7 +358,7 @@ describe('createFakeAggregateRepository', () => {
     // When an aggregate is deleted
     await repository.delete(aggregate1.id);
     // Then the deleted aggregate is no longer in the repository
-    expect(await repository.getOne(aggregate1.id)).toBeUndefined();
+    expect(await repository.getOne(aggregate1.id)).toBeNull();
     // And the other aggregate is still in the repository
     expect(await repository.getOne(aggregate2.id)).toEqual(aggregate2);
   });

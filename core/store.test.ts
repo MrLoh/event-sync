@@ -187,9 +187,9 @@ describe('create store', () => {
     expect(store.state[id]).toMatchObject({
       createdBy: account?.id,
       createdOn: deviceId,
-      lastEventId: events[0].id,
-      createdAt: events[0].dispatchedAt,
-      updatedAt: events[0].dispatchedAt,
+      lastEventId: events[0]?.id,
+      createdAt: events[0]?.dispatchedAt,
+      updatedAt: events[0]?.dispatchedAt,
       version: 1,
     });
   });
@@ -284,14 +284,14 @@ describe('create store', () => {
     const subscriber = jest.fn();
     context.eventBus.subscribe(subscriber);
     // When an update event is called on a non-existent aggregate
-    expect(() => store.update('p1', { name: 'test' })).rejects.toThrowError(
+    await expect(() => store.update('p1', { name: 'test' })).rejects.toThrowError(
       // Then an error is thrown
-      new NotFoundError('PROFILE aggregate with id p1 not found')
+      new NotFoundError('PROFILE:p1 not found')
     );
     // When a delete event is called on a non-existent aggregate
-    expect(() => store.delete('p1')).rejects.toThrowError(
+    await expect(() => store.delete('p1')).rejects.toThrowError(
       // Then an error is thrown as well
-      new NotFoundError('PROFILE aggregate with id p1 not found')
+      new NotFoundError('PROFILE:p1 not found')
     );
     // And no event is dispatched
     expect(subscriber).not.toHaveBeenCalled();
@@ -392,7 +392,7 @@ describe('create store', () => {
       })
     );
     // When the create command is called again
-    expect(() => store.create()).rejects.toThrowError(
+    await expect(() => store.create()).rejects.toThrowError(
       // Then it can access the current state to run custom logic
       new ConflictError(`profile for account ${account?.id} already exists`)
     );
@@ -492,7 +492,7 @@ describe('create store', () => {
     expect(handleError).toHaveBeenCalledWith(new Error('insert failed'));
     expect(context.eventBus.terminated).toBe(true);
     // And the state is not persisted
-    expect(await aggregateRepository.getOne(newProfileId)).toBeUndefined();
+    expect(await aggregateRepository.getOne(newProfileId)).toBeNull();
     // And the state is rolled back
     expect(Object.keys(store.state)).toHaveLength(1);
     expect(store.state[newProfileId]).toBeUndefined();
@@ -508,15 +508,15 @@ describe('create store', () => {
     jest.spyOn(context.authAdapter, 'getAccount').mockImplementationOnce(async () => null);
     // And an existing profile
     const id = await store.create({ name: 'tester' });
-    expect(store.state[id].createdBy).toBeUndefined();
-    expect(context.eventsRepository.events[0].recordedAt).toBeUndefined();
-    expect(context.eventsRepository.events[0].createdBy).toBeUndefined();
+    expect(store.state[id]?.createdBy).toBeUndefined();
+    expect(context.eventsRepository.events[0]?.recordedAt).toBeUndefined();
+    expect(context.eventsRepository.events[0]?.createdBy).toBeUndefined();
     // And a subscriber to the store
     const subscriber = jest.fn();
     store.subscribe(subscriber);
     // When an event is marked as recorded
     const recordedEvent = {
-      ...context.eventsRepository.events[0],
+      ...context.eventsRepository.events[0]!,
       recordedAt: new Date(),
       createdBy: createId(),
     };
@@ -609,6 +609,24 @@ describe('create store', () => {
     await expect(() => store.applyEvent(event)).rejects.toThrowError(
       // Then an error is thrown
       new Error('PROFILE store cannot apply event for OTHER aggregate')
+    );
+  });
+
+  it('throws if trying to update an aggregate that does not exist', async () => {
+    // Given a store
+    const { store } = setup();
+    // And an update event for a non-existent aggregate
+    const event = createEvent('PROFILE', 'PROFILE_UPDATED', {
+      operation: 'update',
+      prevId: createId(),
+      aggregateId: 'p1',
+      payload: { name: 'test' },
+      createdBy: createId(),
+    });
+    // When the event is applied to the store
+    await expect(() => store.applyEvent(event)).rejects.toThrowError(
+      // Then an error is thrown
+      new NotFoundError('PROFILE:p1 not found')
     );
   });
 
