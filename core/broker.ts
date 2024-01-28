@@ -1,7 +1,7 @@
 import { BehaviorSubject, filter, interval, throttleTime, merge } from 'rxjs';
 import { tryCatch } from '../utils/result';
 import { type EventBus, createEventBus } from './event-bus';
-import { type AggregateStore, createStore } from './store';
+import { type AggregateStore, createStore, AnyAggregateStore } from './store';
 import { createContext, type AggregateConfigBuilder } from './aggregate';
 
 import type {
@@ -178,15 +178,7 @@ export const createBroker = <U extends AccountInterface>({
   };
   let unsubscribe = initialize();
 
-  const stores: {
-    [aggregateType: string]: AggregateStore<
-      U,
-      string,
-      any,
-      any,
-      AggregateCommandsMaker<U, string, any, any>
-    >;
-  } = {};
+  const stores: { [aggregateType: string]: AnyAggregateStore<U> } = {};
   const register = <
     A extends string,
     S extends BaseState,

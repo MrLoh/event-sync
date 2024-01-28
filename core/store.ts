@@ -47,7 +47,6 @@ export type AggregateStore<
      * that originated from other clients.
      *
      * @param event the event to processed
-     * @returns true if the event was applied successfully, false if not
      */
     applyEvent: (event: AnyAggregateEvent) => Promise<void>;
     /**
@@ -55,7 +54,6 @@ export type AggregateStore<
      * repository, update the aggregate state and persist it in the aggregate repository
      *
      * @param event the event to record must have a matching aggregate type of the store
-     * @returns true if the event was recorded successfully, false if not
      */
     markRecorded: (event: AnyRecordedAggregateEvent) => Promise<void>;
     /**
@@ -75,6 +73,14 @@ export type AggregateStore<
      */
     initialized: boolean;
   };
+
+export type AnyAggregateStore<U extends AccountInterface> = AggregateStore<
+  U,
+  string,
+  any,
+  any,
+  AggregateCommandsMaker<U, string, any, any>
+>;
 
 export const baseStateSchema: ZodSchema<BaseState> = z.object({
   id: z.string().nonempty(),
@@ -271,6 +277,48 @@ export const createStore = <
     } catch (e) {
       if (ctx.eventBus) ctx.eventBus.terminate(e as Error);
       collection$.next(currStoreState);
+    }
+  };
+
+  const validateEvent = async (event: AnyAggregateEvent) => {
+    if (event.aggregateType !== agg.aggregateType) {
+      throw new Error(
+        `${agg.aggregateType} store cannot validate event for ${event.aggregateType} aggregate`
+      );
+    }
+    if (agg.eventSchema) {
+      const parseResult = agg.eventSchema.safeParse(event);
+      if (!parseResult.success) {
+        throw new InvalidInputError(
+          `Invalid event for aggregate ${agg.aggregateType}`,
+          parseResult.error
+        );
+      }
+    }
+    const aggregateState =
+      event.operation === 'create'
+        ? stateSchema.parse({
+            ...(
+              eventByEventType[event.type] as AggregateEventConfig<U, A, 'create', string, S, any>
+            ).construct(event.payload),
+            id: event.aggregateId,
+            createdOn: event.createdOn,
+            createdBy: event.createdBy,
+            createdAt: event.dispatchedAt,
+            updatedAt: event.dispatchedAt,
+            lastEventId: event.id,
+            lastRecordedAt: event.recordedAt,
+            version: 1,
+          })
+        : collection$.value[event.aggregateId];
+    if (!aggregateState) {
+      throw new NotFoundError(`${agg.aggregateType}:${event.aggregateId} not found`);
+    }
+    const account = await ctx.authAdapter.getAccount();
+    if (!agg.aggregateAccessPolicy!(account, aggregateState)) {
+      throw new UnauthorizedError(
+        `Account ${account?.id} is not authorized to record event ${event.type}`
+      );
     }
   };
 

@@ -14,6 +14,7 @@ import type {
   AggregateCommandsContext,
   AggregateCommandsMaker,
   DefaultAggregateEventsConfig,
+  AggregateAccessPolicy,
 } from '../utils/types';
 import type { AggregateStore } from './store';
 
@@ -244,6 +245,21 @@ export const baseEventSchema = z.object({
   recordedAt: z.date().optional(),
 });
 
+type RegisterAggregateFunction<A extends string, U extends AccountInterface> = (
+  config: AggregateConfig<U, A, any, any, any>
+) => AggregateStore<U, A, any, any, any>;
+
+type AggregateOptions<
+  A extends string,
+  U extends AccountInterface,
+  R extends RegisterAggregateFunction<A, U> | undefined
+> = {
+  createAggregateId?: () => string;
+  eventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
+  aggregateAccessPolicy?: AggregateAccessPolicy<U, BaseState>;
+  register?: R;
+};
+
 /**
  * Create an aggregate builder context
  *
@@ -254,20 +270,12 @@ export const createContext = <U extends AccountInterface>(
   ctx: {
     createEventId?: () => string;
     defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
+    defaultAggregateAccessPolicy?: AggregateAccessPolicy<U, BaseState>;
   } = {}
 ): {
-  aggregate: <
-    A extends string,
-    R extends
-      | ((config: AggregateConfig<U, A, any, any, any>) => AggregateStore<U, A, any, any, any>)
-      | undefined
-  >(
+  aggregate: <A extends string, R extends RegisterAggregateFunction<A, U> | undefined>(
     aggregateType: A,
-    options?: {
-      createAggregateId?: () => string;
-      defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
-      register?: R;
-    }
+    options?: AggregateOptions<A, U, R>
   ) => AggregateConfigBuilder<U, A, BaseState, {}, () => {}, R extends undefined ? false : true>;
 } => {
   /**
@@ -277,18 +285,9 @@ export const createContext = <U extends AccountInterface>(
    * @param options options for the aggregate
    * @returns the aggregate builder for chaining
    */
-  const aggregate = <
-    A extends string,
-    R extends
-      | ((config: AggregateConfig<U, A, any, any, any>) => AggregateStore<U, A, any, any, any>)
-      | undefined
-  >(
+  const aggregate = <A extends string, R extends RegisterAggregateFunction<A, U> | undefined>(
     aggregateType: A,
-    options?: {
-      createAggregateId?: () => string;
-      defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
-      register?: R;
-    }
+    options?: AggregateOptions<A, U, R>
   ) => {
     /**
      * Define a event for the aggregate
@@ -303,7 +302,7 @@ export const createContext = <U extends AccountInterface>(
         config: {
           aggregateType,
           operation,
-          dispatchPolicy: options?.defaultEventDispatchPolicy ?? ctx.defaultEventDispatchPolicy,
+          dispatchPolicy: options?.eventDispatchPolicy ?? ctx.defaultEventDispatchPolicy,
           payloadSchema: operation === 'delete' ? z.undefined() : undefined,
         },
         type: (type) => {
@@ -372,8 +371,8 @@ export const createContext = <U extends AccountInterface>(
         aggregateType: aggregateType,
         createAggregateId: options?.createAggregateId || ctx.createEventId,
         aggregateEvents: {},
-        defaultEventDispatchPolicy:
-          options?.defaultEventDispatchPolicy ?? ctx.defaultEventDispatchPolicy,
+        eventDispatchPolicy: options?.eventDispatchPolicy ?? ctx.defaultEventDispatchPolicy,
+        aggregateAccessPolicy: options?.aggregateAccessPolicy ?? ctx.defaultAggregateAccessPolicy,
       } as AggregateConfig<U, A, any, any, any>,
       schema: (schema, schemaOptions) => {
         if (aggBuilder.config.aggregateSchema) throw new Error('Schema already set');

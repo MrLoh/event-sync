@@ -137,3 +137,51 @@ export const tryCatch = <F extends () => unknown | void, E extends Error = Error
     return makeErrorResult(e);
   }
 };
+
+export const railway = async <FD, FE extends Error>(
+  fn: (
+    unwrap: <D, E extends FE>(resultPromise: PromiseResult<D, E> | Result<D, E>) => Promise<D>
+  ) => Promise<FD>
+): PromiseResult<FD, FE> => {
+  class ErrorContainer<E> {
+    error: E;
+    constructor(error: E) {
+      this.error = error;
+    }
+  }
+
+  const unwrap = async <D, E extends FE>(
+    resultPromise: PromiseResult<D, E> | Result<D, E>
+  ): Promise<D> => {
+    const res = await resultPromise;
+    if (!res.ok) throw new ErrorContainer(res.err);
+    return res.val;
+  };
+
+  try {
+    const value = await fn(unwrap);
+    return ok(value);
+  } catch (e) {
+    if (e instanceof ErrorContainer) return err(e.error);
+    throw e;
+  }
+};
+
+// class E1 extends Error {
+//   name = 'E1' as const;
+// }
+// class E2 extends Error {
+//   name = 'E2' as const;
+// }
+
+// const fna = async (): PromiseResult<number, E1> => ok(1);
+// const fnb = async (): PromiseResult<2, E2> => err(E2, 'error');
+
+// (async () => {
+//   const out = await railway<number, E1 | E2>(async (unwrap) => {
+//     const a = await unwrap(fna());
+//     const rb = fnb();
+//     const b = await unwrap(rb);
+//     return a + b;
+//   });
+// })();

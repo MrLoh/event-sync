@@ -14,6 +14,7 @@ describe('create aggregate config', () => {
   const ctx = createContext<Account>({
     createEventId: createId,
     defaultEventDispatchPolicy: () => true,
+    defaultAggregateAccessPolicy: () => true,
   });
 
   it('should generate aggregate config with type', () => {
@@ -166,7 +167,7 @@ describe('create aggregate config', () => {
   it('can define specific policy for event', () => {
     // Given an aggregate with a default policy
     const base = ctx
-      .aggregate('profile', { defaultEventDispatchPolicy: () => false })
+      .aggregate('profile', { eventDispatchPolicy: () => false })
       .schema(z.object({ name: z.string().min(2) }));
     // When defining a event with a policy
     const eventDispatchPolicy = jest.fn(() => true);
@@ -184,9 +185,9 @@ describe('create aggregate config', () => {
 
   it('can define default policy on aggregate', () => {
     // Given a default policy is defined on the aggregate
-    const aggregatePolicy = jest.fn(() => true);
+    const eventDispatchPolicy = jest.fn(() => true);
     const base = ctx
-      .aggregate('profile', { defaultEventDispatchPolicy: aggregatePolicy })
+      .aggregate('profile', { eventDispatchPolicy })
       .schema(z.object({ name: z.string().min(2) }));
     // When the event policy is not defined
     const { config } = base.events((event) => ({
@@ -195,10 +196,10 @@ describe('create aggregate config', () => {
         .destructor(() => {}),
     }));
     // Then the aggregate policy should be used
-    expect(config.aggregateEvents.delete.dispatchPolicy).toBe(aggregatePolicy);
+    expect(config.aggregateEvents.delete.dispatchPolicy).toBe(eventDispatchPolicy);
     config.aggregateEvents.delete.dispatchPolicy({ id: 'tester', roles: [] }, {} as any, {} as any);
     // And the default policy should be set on the config
-    expect(config.defaultEventDispatchPolicy).toBe(aggregatePolicy);
+    expect(config.eventDispatchPolicy).toBe(eventDispatchPolicy);
   });
 
   it('can define default policy on context', () => {
@@ -222,7 +223,7 @@ describe('create aggregate config', () => {
     config.aggregateEvents.create.dispatchPolicy({ id: 'tester', roles: [] }, {} as any, {} as any);
     expect(contextPolicy).toHaveBeenCalled();
     // And the default policy should be set on the config
-    expect(config.defaultEventDispatchPolicy).toBe(contextPolicy);
+    expect(config.eventDispatchPolicy).toBe(contextPolicy);
   });
 
   it('throw error if no policy is defined', () => {
@@ -346,6 +347,15 @@ describe('create aggregate config', () => {
       // Then an error should be thrown
     ).toThrowError('Commands already set');
   });
+
+  // it('can define access conditions', () => {
+  //   const { config } = ctx
+  //     .aggregate('profile')
+  //     .schema(z.object({ name: z.string().min(2), ownerId: z.string() }))
+  //     .access((account, aggregate) => aggregate.ownerId === account?.id);
+  //   // Then the config should have the correct access control
+  //   expect(config.aggregateAccessCondition).toBe();
+  // });
 
   it('can pass register function to aggregate config', () => {
     // Given a register function

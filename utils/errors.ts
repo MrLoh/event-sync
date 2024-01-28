@@ -7,6 +7,13 @@ export class InvalidInputError<E extends Error> extends Error {
   }
 }
 
+export class UnauthenticatedError extends Error {
+  name = 'UnauthenticatedError' as const;
+  constructor(message?: string) {
+    super(message);
+  }
+}
+
 export class UnauthorizedError extends Error {
   name = 'UnauthorizedError' as const;
   constructor(message: string) {

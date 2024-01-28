@@ -66,6 +66,13 @@ export type EventsRepository = {
    * @returns promise of the last recorded event
    */
   getLastReceivedEvent: () => Promise<AnyAggregateEvent | null>;
+  /**
+   * Get all events since the last received event
+   *
+   * @param lastReceivedEventId - last event id received or null if this is the first fetch
+   * @returns promise with array of the new events
+   */
+  getNewSince: (lastReceivedEventId: string | null) => Promise<AnyAggregateEvent[]>;
 };
 
 export type AccountInterface = { id: string };
@@ -142,6 +149,11 @@ export type AggregateRepository<S extends BaseState> = {
    */
   deleteAll: () => Promise<void>;
 };
+
+export type AggregateAccessPolicy<U extends AccountInterface, S extends BaseState> = (
+  account: U | null,
+  aggregate: S
+) => boolean;
 
 export type EventDispatchPolicy<U extends AccountInterface, S extends BaseState, P> = (
   account: U | null,
@@ -278,7 +290,9 @@ export type AggregateConfig<
   /** Function to generate unique IDs */
   createAggregateId?: () => string;
   /** The default policy for all actions that determines if the account is authorized for the event */
-  defaultEventDispatchPolicy?: EventDispatchPolicy<U, S, any>;
+  eventDispatchPolicy?: EventDispatchPolicy<U, S, any>;
+  /** The policy that determines if the account is authorized to read the aggregate events */
+  aggregateAccessPolicy?: AggregateAccessPolicy<U, S>;
   /** The schema of the aggregate events */
   eventSchema?: ZodSchema<
     {
@@ -300,7 +314,7 @@ export type EventServerAdapter = {
   /**
    * Fetch new events since lastReceivedEventId from the server
    *
-   * @param lastReceivedEventId
+   * @param lastReceivedEventId - last event id received or null if this is the first fetch
    * @returns promise with array of the new events
    */
   fetch: (lastReceivedEventId: string | null) => Promise<AnyAggregateEvent[]>;
