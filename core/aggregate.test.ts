@@ -1,14 +1,14 @@
 import { z } from 'zod';
 
-import { createContext } from './aggregate';
 import {
-  createId,
-  type Account,
-  createFakeAggregateRepository,
   createAggregateObject,
   createEvent,
+  createFakeAggregateRepository,
+  createId,
+  type Account,
 } from '../utils/fakes';
 import type { BaseState } from '../utils/types';
+import { createContext } from './aggregate';
 
 describe('create aggregate config', () => {
   const ctx = createContext<Account>({
@@ -38,7 +38,7 @@ describe('create aggregate config', () => {
     const base = ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // When trying to overwrite the schema
     expect(
-      () => base.schema(z.object({ name: z.string().min(2) }))
+      () => base.schema(z.object({ name: z.string().min(2) })),
       // Then an error should be thrown
     ).toThrowError('Schema already set');
   });
@@ -62,7 +62,7 @@ describe('create aggregate config', () => {
     const base = ctx.aggregate('profile').repository(createFakeAggregateRepository<BaseState>());
     // When trying to overwrite the repository
     expect(
-      () => base.repository(createFakeAggregateRepository<BaseState>())
+      () => base.repository(createFakeAggregateRepository<BaseState>()),
       // Then an error should be thrown
     ).toThrowError('Repository already set');
   });
@@ -106,25 +106,25 @@ describe('create aggregate config', () => {
       }));
     // When the event schema is used with a valid create event
     const res1 = config.eventSchema!.safeParse(
-      createEvent('profile', 'profile.create', { payload: { name: 'test' } })
+      createEvent('profile', 'profile.create', { payload: { name: 'test' } }),
     );
     // Then the event should be valid
     expect(res1.success).toBe(true);
     // When the event schema is used with an invalid create event
     const res2 = config.eventSchema!.safeParse(
-      createEvent('profile', 'profile.create', { payload: {} })
+      createEvent('profile', 'profile.create', { payload: {} }),
     );
     // Then the event should be invalid
     expect(res2.success).toBe(false);
     // When the event schema is used with a valid update event
     const res3 = config.eventSchema!.safeParse(
-      createEvent('profile', 'profile.update', { operation: 'update', payload: {}, prevId: 'p1' })
+      createEvent('profile', 'profile.update', { operation: 'update', payload: {}, prevId: 'p1' }),
     );
     // Then the event should be valid
     expect(res3.success).toBe(true);
     // When the event schema is used with an invalid update event
     const res4 = config.eventSchema!.safeParse(
-      createEvent('profile', 'profile.update', { operation: 'update', payload: {}, prevId: '' })
+      createEvent('profile', 'profile.update', { operation: 'update', payload: {}, prevId: '' }),
     );
     // Then the event should be invalid
     expect(res4.success).toBe(false);
@@ -135,17 +135,17 @@ describe('create aggregate config', () => {
     const baseConfig = () => ctx.aggregate('profile').schema(z.object({ name: z.string().min(2) }));
     // When trying to define a create event without a constructor
     expect(
-      () => baseConfig().events((event) => ({ create: event('create') }))
+      () => baseConfig().events((event) => ({ create: event('create') })),
       // Then an error should be thrown
     ).toThrowError('missing constructor definition');
     // When trying to define an update event without a reducer
     expect(
-      () => baseConfig().events((event) => ({ update: event('update') }))
+      () => baseConfig().events((event) => ({ update: event('update') })),
       // Then an error should be thrown
     ).toThrowError('missing reducer definition');
     // When trying to define a delete event without a destructor
     expect(
-      () => baseConfig().events((event) => ({ delete: event('delete') }))
+      () => baseConfig().events((event) => ({ delete: event('delete') })),
       // Then no error should be thrown
     ).not.toThrowError('missing destructor definition');
   });
@@ -237,7 +237,7 @@ describe('create aggregate config', () => {
           create: event('create')
             .payload(z.object({ name: z.string().min(2) }))
             .constructor((state) => state),
-        }))
+        })),
       // Then an error should be thrown
     ).toThrowError('missing dispatch policy definition for create event');
   });
@@ -291,7 +291,7 @@ describe('create aggregate config', () => {
     expect(
       config.aggregateEvents.update.reduce(createAggregateObject({ id: 'p1', name: 'tester' }), {
         name: 'tester 2',
-      })
+      }),
     ).toMatchObject({ name: 'tester 2' });
     expect(config.aggregateEvents.delete).toMatchObject({
       eventType: 'profile.delete',
@@ -307,14 +307,14 @@ describe('create aggregate config', () => {
       .schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true });
     // When trying to define events
     expect(
-      () => base1.events((event) => ({ delete: event('delete') }))
+      () => base1.events((event) => ({ delete: event('delete') })),
       // Then an error should be thrown
     ).toThrowError('Events already set');
     // Given events are already defined via the events function
     const base2 = ctx.aggregate('profile').events((event) => ({ delete: event('delete') }));
     // When trying to define events via the schema
     expect(
-      () => base2.schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true })
+      () => base2.schema(z.object({ name: z.string().min(2) }), { createDefaultEvents: true }),
       // Then an error should be thrown
     ).toThrowError('Events already set');
   });
@@ -343,7 +343,7 @@ describe('create aggregate config', () => {
     const base = ctx.aggregate('profile').commands(() => ({}));
     // When trying to overwrite the command maker
     expect(
-      () => base.commands(() => ({}))
+      () => base.commands(() => ({})),
       // Then an error should be thrown
     ).toThrowError('Commands already set');
   });

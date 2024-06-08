@@ -1,4 +1,5 @@
-import { ReplaySubject, Subject, startWith, switchMap } from 'rxjs';
+import { ReplaySubject, startWith, Subject, switchMap } from 'rxjs';
+
 import type { AnyAggregateEvent } from '../utils/types';
 
 export type EventBus<E extends AnyAggregateEvent = AnyAggregateEvent> = {
@@ -51,7 +52,7 @@ export const createEventBus = <E extends AnyAggregateEvent = AnyAggregateEvent>(
   let subscription = source$.subscribe(destination$);
   const emitter$ = resetter$.asObservable().pipe(
     startWith(null),
-    switchMap(() => destination$)
+    switchMap(() => destination$),
   );
   let terminated = false;
   // if no error handler is provided, throw error if terminated with error

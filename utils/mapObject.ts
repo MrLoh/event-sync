@@ -7,12 +7,12 @@
  */
 export const mapObject = <
   O extends { [key: string]: any },
-  F extends (value: O[keyof O], key: keyof O) => any
+  F extends (value: O[keyof O], key: keyof O) => any,
 >(
   obj: O,
-  fn: F
+  fn: F,
 ): { [key in keyof O]: ReturnType<F> } => {
   return Object.fromEntries(
-    Object.entries(obj).map(([key, value]) => [key, fn(value, key)])
+    Object.entries(obj).map(([key, value]) => [key, fn(value, key)]),
   ) as any;
 };

@@ -1,6 +1,5 @@
-import { createEventBus } from './event-bus';
-import type { AnyAggregateEvent } from '../utils/types';
 import { createEvent } from '../utils/fakes';
+import { createEventBus } from './event-bus';
 
 describe('event bus', () => {
   it('relays dispatched events to subscriber', () => {

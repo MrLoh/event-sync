@@ -1,29 +1,29 @@
-import { z, type ZodSchema } from 'zod';
 import { BehaviorSubject } from 'rxjs';
-import { mapObject } from '../utils/mapObject';
-import { InvalidInputError, UnauthorizedError, NotFoundError } from '../utils/errors';
+import { z, type ZodSchema } from 'zod';
 
-import type { EventBus } from './event-bus';
+import { InvalidInputError, NotFoundError, UnauthorizedError } from '../utils/errors';
+import { mapObject } from '../utils/mapObject';
 import type {
   AccountInterface,
-  BaseState,
-  AggregateEventConfig,
-  Operation,
-  AuthAdapter,
-  EventsRepository,
-  AggregateConfig,
-  AggregateEventDispatchers,
   AggregateCommandsMaker,
+  AggregateConfig,
+  AggregateEventConfig,
+  AggregateEventDispatchers,
   AnyAggregateEvent,
   AnyRecordedAggregateEvent,
+  AuthAdapter,
+  BaseState,
+  EventsRepository,
+  Operation,
 } from '../utils/types';
+import type { EventBus } from './event-bus';
 
 export type AggregateStore<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
   E extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
-  C extends AggregateCommandsMaker<U, A, S, E>
+  C extends AggregateCommandsMaker<U, A, S, E>,
 > = Omit<AggregateEventDispatchers<U, A, S, E>, keyof ReturnType<C>> &
   ReturnType<C> & {
     /**
@@ -98,7 +98,7 @@ export const ensureEncodingSafety = <O extends Record<string, any>>(obj: O): O =
   return JSON.parse(JSON.stringify(obj), (_, value: unknown) =>
     typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
       ? new Date(value)
-      : value
+      : value,
   );
 };
 
@@ -114,7 +114,7 @@ export const createStore = <
   A extends string,
   S extends BaseState,
   E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
-  C extends AggregateCommandsMaker<U, A, S, E> = () => {}
+  C extends AggregateCommandsMaker<U, A, S, E> = () => {},
 >(
   aggBuilderOrConfig: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> },
   ctx: {
@@ -131,7 +131,7 @@ export const createStore = <
     eventBus?: EventBus;
     /** The repository for persisting events*/
     eventsRepository?: EventsRepository;
-  }
+  },
 ): AggregateStore<U, A, S, E, C> => {
   const agg = 'config' in aggBuilderOrConfig ? aggBuilderOrConfig.config : aggBuilderOrConfig;
 
@@ -141,7 +141,7 @@ export const createStore = <
   // define the zod schema for the aggregate state
   const stateSchema = z.intersection(
     baseStateSchema,
-    agg.aggregateSchema ?? z.any()
+    agg.aggregateSchema ?? z.any(),
   ) as ZodSchema<S>;
 
   // load the aggregate states from the repository
@@ -159,13 +159,13 @@ export const createStore = <
       ...acc,
       [eventConfig.eventType]: eventConfig,
     }),
-    {} as { [eventType: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
+    {} as { [eventType: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
   );
 
   const markRecorded = async (event: AnyRecordedAggregateEvent) => {
     if (event.aggregateType !== agg.aggregateType) {
       throw new Error(
-        `${agg.aggregateType} store cannot record event for ${event.aggregateType} aggregate`
+        `${agg.aggregateType} store cannot record event for ${event.aggregateType} aggregate`,
       );
     }
     await initialization;
@@ -219,7 +219,7 @@ export const createStore = <
 
     if (event.aggregateType !== agg.aggregateType) {
       throw new Error(
-        `${agg.aggregateType} store cannot apply event for ${event.aggregateType} aggregate`
+        `${agg.aggregateType} store cannot apply event for ${event.aggregateType} aggregate`,
       );
     }
     if (event.operation !== 'create' && !currStoreState[event.aggregateId]) {
@@ -283,7 +283,7 @@ export const createStore = <
   const validateEvent = async (event: AnyAggregateEvent) => {
     if (event.aggregateType !== agg.aggregateType) {
       throw new Error(
-        `${agg.aggregateType} store cannot validate event for ${event.aggregateType} aggregate`
+        `${agg.aggregateType} store cannot validate event for ${event.aggregateType} aggregate`,
       );
     }
     if (agg.eventSchema) {
@@ -291,7 +291,7 @@ export const createStore = <
       if (!parseResult.success) {
         throw new InvalidInputError(
           `Invalid event for aggregate ${agg.aggregateType}`,
-          parseResult.error
+          parseResult.error,
         );
       }
     }
@@ -317,7 +317,7 @@ export const createStore = <
     const account = await ctx.authAdapter.getAccount();
     if (!agg.aggregateAccessPolicy!(account, aggregateState)) {
       throw new UnauthorizedError(
-        `Account ${account?.id} is not authorized to record event ${event.type}`
+        `Account ${account?.id} is not authorized to record event ${event.type}`,
       );
     }
   };
@@ -338,7 +338,7 @@ export const createStore = <
         if (!res.success) {
           throw new InvalidInputError(
             `Invalid payload for event ${eventConfig.eventType}`,
-            res.error
+            res.error,
           );
         }
         payload = res.data;
@@ -361,7 +361,7 @@ export const createStore = <
       const state = collection$.value[aggregateId] ?? null;
       if (!eventConfig.dispatchPolicy(account, state, event)) {
         throw new UnauthorizedError(
-          `Account ${account?.id} is not authorized to dispatch event ${event.type}`
+          `Account ${account?.id} is not authorized to dispatch event ${event.type}`,
         );
       }
       // call the apply function

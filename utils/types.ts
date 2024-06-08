@@ -152,13 +152,13 @@ export type AggregateRepository<S extends BaseState> = {
 
 export type AggregateAccessPolicy<U extends AccountInterface, S extends BaseState> = (
   account: U | null,
-  aggregate: S
+  aggregate: S,
 ) => boolean;
 
 export type EventDispatchPolicy<U extends AccountInterface, S extends BaseState, P> = (
   account: U | null,
   aggregate: S | null,
-  event: AggregateEvent<string, Operation, string, P>
+  event: AggregateEvent<string, Operation, string, P>,
 ) => boolean;
 
 export type AggregateEventConfig<
@@ -167,7 +167,7 @@ export type AggregateEventConfig<
   O extends Operation,
   T extends string,
   S extends BaseState,
-  P
+  P,
 > = {
   /** The type of the aggregate */
   aggregateType: A;
@@ -221,7 +221,7 @@ export type AggregateEventConfig<
 export type DefaultAggregateEventsConfig<
   U extends AccountInterface,
   A extends string,
-  S extends BaseState
+  S extends BaseState,
 > = {
   create: AggregateEventConfig<U, A, 'create', `${A}.create`, S, Omit<S, keyof BaseState>>;
   update: AggregateEventConfig<U, A, 'update', `${A}.update`, S, Partial<Omit<S, keyof BaseState>>>;
@@ -232,7 +232,7 @@ export type AggregateEventDispatchers<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
+  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
 > = {
   [K in keyof E]: E[K] extends AggregateEventConfig<U, A, infer O, any, S, infer P>
     ? O extends 'create'
@@ -255,7 +255,7 @@ export type AggregateCommandsContext<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
+  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
 > = AuthAdapter<U> & {
   /** Get the current state of the aggregate */
   getState: () => { [id: string]: S };
@@ -267,7 +267,7 @@ export type AggregateCommandsMaker<
   U extends AccountInterface,
   A extends string,
   S extends BaseState,
-  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> }
+  E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
 > = (context: AggregateCommandsContext<U, A, S, E>) => { [fn: string]: (...args: any[]) => any };
 
 export type AggregateConfig<
@@ -275,7 +275,7 @@ export type AggregateConfig<
   A extends string,
   S extends BaseState,
   E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
-  C extends AggregateCommandsMaker<U, A, S, E>
+  C extends AggregateCommandsMaker<U, A, S, E>,
 > = {
   /** The type of the aggregate */
   aggregateType: A;

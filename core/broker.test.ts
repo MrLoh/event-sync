@@ -1,16 +1,17 @@
 import { z } from 'zod';
-import { createBroker } from './broker';
+
+import { NetworkError } from '../utils/errors';
 import {
-  createId,
   createEvent,
   createFakeAggregateRepository,
+  createFakeAuthAdapter,
   createFakeConnectionStatusAdapter,
   createFakeEventServerAdapter,
   createFakeEventsRepository,
-  createFakeAuthAdapter,
+  createId,
 } from '../utils/fakes';
 import { BaseState } from '../utils/types';
-import { NetworkError } from '../utils/errors';
+import { createBroker } from './broker';
 
 describe('create broker', () => {
   jest.useFakeTimers({ timerLimit: 100 });
@@ -198,7 +199,7 @@ describe('create broker', () => {
         type: 'profile.create',
         payload: { name: 'test' },
         createdBy: accountId,
-      })
+      }),
     );
     // And the events are marked as recorded and created by the account
     expect(eventsRepository.events.filter((e) => e.recordedAt)).toHaveLength(1);
@@ -209,7 +210,7 @@ describe('create broker', () => {
         payload: { name: 'test' },
         createdBy: accountId,
         recordedAt: expect.any(Date),
-      })
+      }),
     );
     // And the store state is updated
     expect(store.state[id]).toMatchObject({
@@ -337,7 +338,7 @@ describe('create broker', () => {
     await jest.advanceTimersByTimeAsync(0);
     // Then the store state is updated
     expect(Object.values(store.state)).toContainEqual(
-      expect.objectContaining({ id: serverEvent.aggregateId, name: 'server' })
+      expect.objectContaining({ id: serverEvent.aggregateId, name: 'server' }),
     );
     // And the event is persisted
     expect(eventsRepository.events).toHaveLength(1);
@@ -380,7 +381,7 @@ describe('create broker', () => {
           id: event.aggregateId,
           name: 'other client',
         }),
-      })
+      }),
     );
     // And the event is persisted
     expect(eventsRepository.events).toHaveLength(1);
@@ -448,7 +449,7 @@ describe('create broker', () => {
         aggregateId: id,
         type: 'profile.create',
         payload: { name: 'test' },
-      })
+      }),
     );
   });
 

@@ -41,8 +41,8 @@ type PolicyBuilder<S extends { [key: string]: unknown }> = {
 const createPolicy = <U extends AccountInterface, S extends { [key: string]: unknown }>(
   make: (
     access: (operation: Operation | 'read') => PolicyBuilder<S>,
-    account: U
-  ) => { rules: PolicyRule<S>[] }
+    account: U,
+  ) => { rules: PolicyRule<S>[] },
 ) => {
   return (account: U) => {
     const makeBuilder = (operation: Operation | 'read') => {
@@ -80,5 +80,5 @@ const rules = createPolicy<Account, State>((policy, account) =>
   policy('read')
     .allow({ status: { in: ['published', 'preview'] } }, 'Only published content can be read')
     .allow({ createdBy: account.id }, 'Only the creator can read drafts')
-    .forbid(account.role === 'guest', 'Guests cannot read content')
+    .forbid(account.role === 'guest', 'Guests cannot read content'),
 );

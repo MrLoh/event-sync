@@ -69,14 +69,14 @@ describe('err', () => {
     // @ts-expect-error
     expect(() => err(1)).toThrow(
       // Then an error should be thrown
-      'err expects a string, Error, or Error class as an argument'
+      'err expects a string, Error, or Error class as an argument',
     );
     // When calling err with a class that is not an error
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment -- This is intentional
     // @ts-expect-error
     expect(() => err(class Test {})).toThrow(
       // Then an error should be thrown
-      'err expects a string, Error, or Error class as an argument'
+      'err expects a string, Error, or Error class as an argument',
     );
   });
 });
@@ -151,7 +151,7 @@ describe('tryCatch', () => {
     expect((res.err as AnticipatedError).name).toBe('AnticipatedError');
     // When calling the function with a function that throws an unexpected error
     await expect(
-      () => tryCatch(() => Promise.reject(new Error('unexpected error')), errorTransformer)
+      () => tryCatch(() => Promise.reject(new Error('unexpected error')), errorTransformer),
       // Then an error should be thrown
     ).rejects.toThrow('unexpected error');
   });

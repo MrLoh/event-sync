@@ -12,7 +12,7 @@ import type {
   Operation,
 } from '../utils/types';
 import type { EventBus } from './event-bus';
-import { createStore, type AggregateStore, AnyAggregateStore } from './store';
+import { AnyAggregateStore, createStore, type AggregateStore } from './store';
 
 export type Server<U extends AccountInterface> = {
   /**
@@ -25,9 +25,9 @@ export type Server<U extends AccountInterface> = {
     A extends string,
     S extends BaseState,
     E extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
-    C extends AggregateCommandsMaker<U, A, S, E>
+    C extends AggregateCommandsMaker<U, A, S, E>,
   >(
-    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> }
+    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> },
   ) => AggregateStore<U, A, S, E, C>;
   /**
    * Record an event to the central repository
@@ -55,7 +55,7 @@ export type Server<U extends AccountInterface> = {
    */
   subscribeToEvents?: (
     lastReceivedEventId: string,
-    subscriber: (event: AnyAggregateEvent) => void
+    subscriber: (event: AnyAggregateEvent) => void,
   ) => () => void;
 };
 
@@ -79,9 +79,9 @@ export const createServer = <U extends AccountInterface>({
     A extends string,
     S extends BaseState,
     E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
-    C extends AggregateCommandsMaker<U, A, S, E>
+    C extends AggregateCommandsMaker<U, A, S, E>,
   >(
-    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> }
+    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> },
   ) => {
     const store = createStore(agg, {
       createEventId,

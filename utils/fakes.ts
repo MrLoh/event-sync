@@ -45,7 +45,7 @@ export const createFakeAuthAdapter = (): AuthAdapter<Account> => {
  * property that contains all the events in the repository
  */
 export const createFakeEventsRepository = (
-  authAdapter: AuthAdapter<Account> = createFakeAuthAdapter()
+  authAdapter: AuthAdapter<Account> = createFakeAuthAdapter(),
 ): EventsRepository & {
   events: AnyAggregateEvent[];
 } => {
@@ -88,7 +88,7 @@ export const createFakeEventsRepository = (
  * for simulating dispatching events from other sources and getting and setting recorded events
  */
 export const createFakeEventServerAdapter = (
-  authAdapter: AuthAdapter<Account> = createFakeAuthAdapter()
+  authAdapter: AuthAdapter<Account> = createFakeAuthAdapter(),
 ): EventServerAdapter & {
   dispatch(event: AnyRecordedAggregateEvent): void;
   recordedEvents: AnyRecordedAggregateEvent[];
@@ -115,7 +115,7 @@ export const createFakeEventServerAdapter = (
     async fetch(lastReceivedEventId: string | null): Promise<AnyAggregateEvent[]> {
       const lastEvent = this.recordedEvents.find((e) => e.id === lastReceivedEventId);
       return this.recordedEvents.filter(
-        (e) => e.recordedAt > (lastEvent?.recordedAt ?? new Date(0))
+        (e) => e.recordedAt > (lastEvent?.recordedAt ?? new Date(0)),
       );
     },
     subscribe(subscriber: (event: AnyAggregateEvent) => void) {
@@ -187,7 +187,7 @@ export const createEvent = <
   O extends Operation = 'create',
   P = {},
   R extends Date | undefined = undefined,
-  U extends string | undefined = undefined
+  U extends string | undefined = undefined,
 >(
   aggregateType: A,
   eventType: T,
@@ -206,7 +206,7 @@ export const createEvent = <
     recordedAt?: R;
     createdBy?: U;
     createdOn?: string;
-  } & (O extends 'create' ? { prevId?: undefined } : { prevId: string }) = {} as any
+  } & (O extends 'create' ? { prevId?: undefined } : { prevId: string }) = {} as any,
 ): AggregateEvent<A, O, T, P> &
   (R extends Date ? { recordedAt: Date } : {}) &
   (U extends string ? { createdBy: string } : {}) =>

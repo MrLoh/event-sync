@@ -105,7 +105,7 @@ export const err: {
  */
 export const tryCatch = <F extends () => unknown | void, E extends Error = Error>(
   expression: F,
-  errorTransformer: (e: Error) => E = (e) => e as E
+  errorTransformer: (e: Error) => E = (e) => e as E,
 ): ReturnType<F> extends void
   ? Result<undefined, E>
   : ReturnType<F> extends Promise<void>
@@ -140,8 +140,8 @@ export const tryCatch = <F extends () => unknown | void, E extends Error = Error
 
 export const railway = async <FD, FE extends Error>(
   fn: (
-    unwrap: <D, E extends FE>(resultPromise: PromiseResult<D, E> | Result<D, E>) => Promise<D>
-  ) => Promise<FD>
+    unwrap: <D, E extends FE>(resultPromise: PromiseResult<D, E> | Result<D, E>) => Promise<D>,
+  ) => Promise<FD>,
 ): PromiseResult<FD, FE> => {
   class ErrorContainer<E> {
     error: E;
@@ -151,7 +151,7 @@ export const railway = async <FD, FE extends Error>(
   }
 
   const unwrap = async <D, E extends FE>(
-    resultPromise: PromiseResult<D, E> | Result<D, E>
+    resultPromise: PromiseResult<D, E> | Result<D, E>,
   ): Promise<D> => {
     const res = await resultPromise;
     if (!res.ok) throw new ErrorContainer(res.err);

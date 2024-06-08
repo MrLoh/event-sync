@@ -1,13 +1,13 @@
-import { NotFoundError, UnauthorizedError } from './errors';
+import { UnauthorizedError } from './errors';
 import {
-  createId,
-  createFakeAuthAdapter,
-  createFakeEventsRepository,
-  createEvent,
   createAggregateObject,
-  createFakeEventServerAdapter,
+  createEvent,
   createFakeAggregateRepository,
+  createFakeAuthAdapter,
   createFakeConnectionStatusAdapter,
+  createFakeEventServerAdapter,
+  createFakeEventsRepository,
+  createId,
 } from './fakes';
 import { BaseState } from './types';
 
@@ -82,7 +82,7 @@ describe('createFakeEventsRepository', () => {
     // When the event is inserted again
     await expect(repository.create(event)).rejects.toThrow(
       // Then an error is thrown
-      `Event ${event.id} already exists`
+      `Event ${event.id} already exists`,
     );
   });
 
@@ -119,10 +119,10 @@ describe('createFakeEventsRepository', () => {
     const repository = createFakeEventsRepository();
     // When trying to mark an event as recorded
     await expect(
-      repository.markRecorded('1', { recordedAt: new Date(), createdBy: createId() })
+      repository.markRecorded('1', { recordedAt: new Date(), createdBy: createId() }),
     ).rejects.toThrow(
       // Then an error is thrown
-      'event:1 not found'
+      'event:1 not found',
     );
   });
 
@@ -174,7 +174,7 @@ describe('createFakeEventsRepository', () => {
     const repository = createFakeEventsRepository(authAdapter);
     await repository.create(createEvent('TEST', 'TEST'));
     await repository.create(
-      createEvent('TEST', 'TEST', { createdOn: await authAdapter.getDeviceId() })
+      createEvent('TEST', 'TEST', { createdOn: await authAdapter.getDeviceId() }),
     );
     // When getting the last recorded event
     const lastReceivedEvent = await repository.getLastReceivedEvent();
@@ -195,7 +195,7 @@ describe('createFakeEventServerAdapter', () => {
     await eventServerAdapter.record(event);
     // Then the event is saved
     expect(eventServerAdapter.recordedEvents).toContainEqual(
-      expect.objectContaining({ id: event.id })
+      expect.objectContaining({ id: event.id }),
     );
     // And the event has a recorded time
     expect(eventServerAdapter.recordedEvents[0]?.recordedAt).toEqual(expect.any(Date));
@@ -245,7 +245,7 @@ describe('createFakeEventServerAdapter', () => {
     // Then an error is thrown
     await expect(eventServerAdapter.record(event)).rejects.toThrow(UnauthorizedError);
     await expect(eventServerAdapter.record(event)).rejects.toThrow(
-      'Event created by different account'
+      'Event created by different account',
     );
   });
 

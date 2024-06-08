@@ -1,23 +1,23 @@
-import { BehaviorSubject, filter, interval, throttleTime, merge } from 'rxjs';
-import { tryCatch } from '../utils/result';
-import { type EventBus, createEventBus } from './event-bus';
-import { type AggregateStore, createStore, AnyAggregateStore } from './store';
-import { createContext, type AggregateConfigBuilder } from './aggregate';
+import { BehaviorSubject, filter, interval, merge, throttleTime } from 'rxjs';
 
+import { tryCatch } from '../utils/result';
 import type {
   AccountInterface,
-  AggregateEventConfig,
+  AggregateCommandsMaker,
   AggregateConfig,
+  AggregateEventConfig,
   AnyAggregateEvent,
   AuthAdapter,
   BaseState,
   ConnectionStatusAdapter,
+  EventDispatchPolicy,
   EventServerAdapter,
   EventsRepository,
   Operation,
-  EventDispatchPolicy,
-  AggregateCommandsMaker,
 } from '../utils/types';
+import { createContext, type AggregateConfigBuilder } from './aggregate';
+import { createEventBus, type EventBus } from './event-bus';
+import { AnyAggregateStore, createStore, type AggregateStore } from './store';
 
 export type Broker<U extends AccountInterface> = {
   /** The auth adapter to get device ids and accounts */
@@ -38,9 +38,9 @@ export type Broker<U extends AccountInterface> = {
     A extends string,
     S extends BaseState,
     E extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
-    C extends AggregateCommandsMaker<U, A, S, E>
+    C extends AggregateCommandsMaker<U, A, S, E>,
   >(
-    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> }
+    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> },
   ) => AggregateStore<U, A, S, E, C>;
   /**
    * Create an aggregate with the broker as a context
@@ -54,7 +54,7 @@ export type Broker<U extends AccountInterface> = {
     options?: {
       createAggregateId?: () => string;
       defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
-    }
+    },
   ) => AggregateConfigBuilder<U, A, BaseState, {}, () => {}, true>;
   /**
    * Syncs events that failed to record. This should be called after login since events are only
@@ -148,7 +148,7 @@ export const createBroker = <U extends AccountInterface>({
         const lastReceivedEvent = await eventsRepository.getLastReceivedEvent();
         // TODO: make errors from event server adapter more specific
         const { val: newEvents } = await tryCatch(() =>
-          eventServerAdapter.fetch(lastReceivedEvent?.id ?? null)
+          eventServerAdapter.fetch(lastReceivedEvent?.id ?? null),
         );
         if (newEvents && newEvents.length) newEvents.map(applyEvent);
       }
@@ -166,7 +166,7 @@ export const createBroker = <U extends AccountInterface>({
     // retry syncing events periodically and when device comes online
     const periodicSyncSubscription = merge(
       connectionStatusObservable(connectionStatusAdapter).pipe(filter((c) => c === true)),
-      interval(retrySyncInterval)
+      interval(retrySyncInterval),
     )
       .pipe(throttleTime(retrySyncInterval / 5))
       .subscribe(sync);
@@ -183,9 +183,9 @@ export const createBroker = <U extends AccountInterface>({
     A extends string,
     S extends BaseState,
     E extends { [fn: string]: AggregateEventConfig<U, A, Operation, string, S, any> },
-    C extends AggregateCommandsMaker<U, A, S, E>
+    C extends AggregateCommandsMaker<U, A, S, E>,
   >(
-    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> }
+    agg: AggregateConfig<U, A, S, E, C> | { config: AggregateConfig<U, A, S, E, C> },
   ) => {
     const store = createStore(agg, {
       createEventId,
@@ -207,7 +207,7 @@ export const createBroker = <U extends AccountInterface>({
     options?: {
       createAggregateId?: () => string;
       defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
-    }
+    },
   ) => aggBuilderCtx.aggregate(aggregateType, { ...options, register });
 
   const reset = async () => {
