@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - master
+      - main
 
 jobs:
   test:
@@ -29,7 +29,7 @@ jobs:
 
       - name: 🧪 Run Tests
         run: yarn test --coverage
-  
+
       - name: 📋 Report Test Results
         uses: dorny/test-reporter@v1
         if: always()
@@ -37,4 +37,3 @@ jobs:
           name: Test Results
           path: '.github/test-results/jest-results.xml'
           reporter: jest-junit
-        
