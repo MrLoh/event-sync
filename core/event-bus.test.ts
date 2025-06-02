@@ -1,6 +1,6 @@
-import { createEventBus } from './event-bus';
-import type { AnyAggregateEvent } from '../utils/types';
 import { createEvent } from '../utils/fakes';
+import type { AnyAggregateEvent } from '../utils/types';
+import { createEventBus } from './event-bus';
 
 describe('event bus', () => {
   it('relays dispatched events to subscriber', () => {
@@ -88,7 +88,7 @@ describe('event bus', () => {
     eventBus.terminate();
     // Then the subscriber is not called anymore
     const testEvent = createEvent('TEST', 'TEST');
-    expect(() => eventBus.dispatch(testEvent)).toThrowError();
+    expect(() => eventBus.dispatch(testEvent)).toThrow();
     expect(subscriber).not.toHaveBeenCalled();
     // And the event bus is marked as terminated
     expect(eventBus.terminated).toBe(true);
@@ -109,7 +109,7 @@ describe('event bus', () => {
     expect(errorHandler).toHaveBeenCalledWith(testError);
     // And the event bus is terminated
     const testEvent = createEvent('TEST', 'TEST');
-    expect(() => eventBus.dispatch(testEvent)).toThrowError();
+    expect(() => eventBus.dispatch(testEvent)).toThrow();
     expect(subscriber).not.toHaveBeenCalled();
   });
 

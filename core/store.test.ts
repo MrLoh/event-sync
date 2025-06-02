@@ -1,6 +1,5 @@
-import { ZodError, z } from 'zod';
-import { createStore, type AggregateStore } from './store';
-import { createEventBus } from './event-bus';
+import { z, ZodError } from 'zod';
+
 import {
   ConflictError,
   InvalidInputError,
@@ -8,21 +7,23 @@ import {
   UnauthorizedError,
 } from '../utils/errors';
 import {
-  createId,
-  createFakeAuthAdapter,
-  createFakeAggregateRepository,
-  createFakeEventsRepository,
   createAggregateObject,
   createEvent,
+  createFakeAggregateRepository,
+  createFakeAuthAdapter,
+  createFakeEventsRepository,
+  createId,
 } from '../utils/fakes';
+import type { Account } from '../utils/fakes';
 import type {
+  AggregateCommandsMaker,
+  AggregateRepository,
   AnyAggregateEvent,
   BaseState,
-  AggregateRepository,
-  AggregateCommandsMaker,
   DefaultAggregateEventsConfig,
 } from '../utils/types';
-import type { Account } from '../utils/fakes';
+import { createEventBus } from './event-bus';
+import { createStore, type AggregateStore } from './store';
 
 describe('create store', () => {
   jest.useFakeTimers({ timerLimit: 100 });
@@ -45,9 +46,9 @@ describe('create store', () => {
         Profile & BaseState,
         DefaultAggregateEventsConfig<Account, 'PROFILE', Profile & BaseState>
       >;
-    }
+    },
   >(
-    overwrites?: O
+    overwrites?: O,
   ) => {
     const aggregateRepository =
       overwrites?.aggregateRepository ?? createFakeAggregateRepository<Profile & BaseState>();
@@ -62,6 +63,7 @@ describe('create store', () => {
       {
         aggregateType: 'PROFILE',
         aggregateSchema: profileSchema,
+        aggregateReadPolicy: () => true,
         aggregateEvents: {
           create: {
             aggregateType: 'PROFILE',
@@ -97,7 +99,7 @@ describe('create store', () => {
         aggregateCommandMaker: overwrites?.aggregateCommandMaker,
         aggregateRepository,
       },
-      context
+      context,
     ) as AggregateStore<
       Account,
       'PROFILE',
@@ -135,7 +137,7 @@ describe('create store', () => {
     const id = await store.create({ name: 'test' });
     // Then the subscriber is called
     expect(subscriber).toHaveBeenCalledWith(
-      expect.objectContaining({ [id]: expect.objectContaining({ name: 'test' }) })
+      expect.objectContaining({ [id]: expect.objectContaining({ name: 'test' }) }),
     );
   });
 
@@ -154,7 +156,7 @@ describe('create store', () => {
         type: 'PROFILE_CREATED',
         aggregateId: id,
         payload: { name: 'test' },
-      })
+      }),
     );
   });
 
@@ -181,7 +183,7 @@ describe('create store', () => {
         createdOn: deviceId,
         dispatchedAt: expect.any(Date),
         prevId: undefined,
-      })
+      }),
     );
     // And the state has appropriate metadata
     expect(store.state[id]).toMatchObject({
@@ -249,7 +251,7 @@ describe('create store', () => {
           // And custom serializable data is serialized
           tags: ['a', 'b', 'c'],
         },
-      })
+      }),
     );
   });
 
@@ -284,14 +286,14 @@ describe('create store', () => {
     const subscriber = jest.fn();
     context.eventBus.subscribe(subscriber);
     // When an update event is called on a non-existent aggregate
-    await expect(() => store.update('p1', { name: 'test' })).rejects.toThrowError(
+    await expect(() => store.update('p1', { name: 'test' })).rejects.toThrow(
       // Then an error is thrown
-      new NotFoundError('PROFILE:p1 not found')
+      new NotFoundError('PROFILE:p1 not found'),
     );
     // When a delete event is called on a non-existent aggregate
-    await expect(() => store.delete('p1')).rejects.toThrowError(
+    await expect(() => store.delete('p1')).rejects.toThrow(
       // Then an error is thrown as well
-      new NotFoundError('PROFILE:p1 not found')
+      new NotFoundError('PROFILE:p1 not found'),
     );
     // And no event is dispatched
     expect(subscriber).not.toHaveBeenCalled();
@@ -320,7 +322,7 @@ describe('create store', () => {
         type: 'PROFILE_CREATED',
         aggregateId: id,
         payload: { name: 'test' },
-      })
+      }),
     );
   });
 
@@ -389,12 +391,12 @@ describe('create store', () => {
         type: 'PROFILE_CREATED',
         aggregateId: expect.any(String),
         payload: { name: 'Anonymous', accountId: account?.id },
-      })
+      }),
     );
     // When the create command is called again
-    await expect(() => store.create()).rejects.toThrowError(
+    await expect(() => store.create()).rejects.toThrow(
       // Then it can access the current state to run custom logic
-      new ConflictError(`profile for account ${account?.id} already exists`)
+      new ConflictError(`profile for account ${account?.id} already exists`),
     );
   });
 
@@ -432,6 +434,7 @@ describe('create store', () => {
       createStore(
         {
           aggregateType: 'PROFILE',
+          aggregateReadPolicy: () => true,
           aggregateEvents: {
             initialize: {
               aggregateType: 'PROFILE',
@@ -447,9 +450,9 @@ describe('create store', () => {
           createEventId: createId,
           authAdapter: createFakeAuthAdapter(),
           eventBus: createEventBus(),
-        }
-      )
-    ).toThrowError('events cannot have the following names');
+        },
+      ),
+    ).toThrow('events cannot have the following names');
   });
 
   it('throws if trying to define commands that would overwrite default functions', () => {
@@ -459,15 +462,16 @@ describe('create store', () => {
         {
           aggregateType: 'PROFILE',
           aggregateEvents: {},
+          aggregateReadPolicy: () => true,
           aggregateCommandMaker: () => ({ initialize: () => {} }),
         },
         {
           createEventId: createId,
           authAdapter: createFakeAuthAdapter(),
           eventBus: createEventBus(),
-        }
-      )
-    ).toThrowError('commands cannot have the following names');
+        },
+      ),
+    ).toThrow('commands cannot have the following names');
   });
 
   it('rolls back state and terminates event bus if event cannot be persisted', async () => {
@@ -498,7 +502,7 @@ describe('create store', () => {
     expect(store.state[newProfileId]).toBeUndefined();
     expect(store.state[oldProfileId]).toMatchObject({ id: oldProfileId, name: 'tester' });
     expect(subscriber).toHaveBeenCalledWith(
-      expect.objectContaining({ [oldProfileId]: expect.any(Object) })
+      expect.objectContaining({ [oldProfileId]: expect.any(Object) }),
     );
   });
 
@@ -530,7 +534,7 @@ describe('create store', () => {
           createdBy: recordedEvent.createdBy,
           lastRecordedAt: expect.any(Date),
         }),
-      })
+      }),
     );
     // And the updated state is persisted to the repository
     expect(await aggregateRepository.getOne(id)).toMatchObject({
@@ -553,9 +557,9 @@ describe('create store', () => {
       recordedAt: new Date(),
     });
     // When the event is recorded
-    await expect(() => store.markRecorded(event)).rejects.toThrowError(
+    await expect(() => store.markRecorded(event)).rejects.toThrow(
       // Then an error is thrown
-      new Error('PROFILE store cannot record event for OTHER aggregate')
+      new Error('PROFILE store cannot record event for OTHER aggregate'),
     );
   });
 
@@ -593,7 +597,7 @@ describe('create store', () => {
     expect(storeSubscriber).toHaveBeenCalledWith(
       expect.objectContaining({
         [event.aggregateId]: expect.objectContaining({ name: 'test' }),
-      })
+      }),
     );
   });
 
@@ -606,9 +610,9 @@ describe('create store', () => {
       recordedAt: new Date(),
     });
     // When the event is applied to the store
-    await expect(() => store.applyEvent(event)).rejects.toThrowError(
+    await expect(() => store.applyEvent(event)).rejects.toThrow(
       // Then an error is thrown
-      new Error('PROFILE store cannot apply event for OTHER aggregate')
+      new Error('PROFILE store cannot apply event for OTHER aggregate'),
     );
   });
 
@@ -624,9 +628,9 @@ describe('create store', () => {
       createdBy: createId(),
     });
     // When the event is applied to the store
-    await expect(() => store.applyEvent(event)).rejects.toThrowError(
+    await expect(() => store.applyEvent(event)).rejects.toThrow(
       // Then an error is thrown
-      new NotFoundError('PROFILE:p1 not found')
+      new NotFoundError('PROFILE:p1 not found'),
     );
   });
 
@@ -639,6 +643,7 @@ describe('create store', () => {
     const store = createStore(
       {
         aggregateType: 'TEST',
+        aggregateReadPolicy: () => true,
         aggregateEvents: {
           failing: {
             aggregateType: 'TEST',
@@ -652,7 +657,7 @@ describe('create store', () => {
           },
         },
       },
-      { createEventId: createId, authAdapter: createFakeAuthAdapter(), eventBus }
+      { createEventId: createId, authAdapter: createFakeAuthAdapter(), eventBus },
     );
     // And a subscriber to the store
     const subscriber = jest.fn();

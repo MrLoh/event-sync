@@ -1,19 +1,20 @@
 import { z } from 'zod';
-import { mapObject } from '../utils/mapObject';
-
 import type { ZodSchema } from 'zod';
+
+import { mapObject } from '../utils/mapObject';
 import type {
-  AggregateRepository,
   AccountInterface,
-  AggregateEventConfig,
-  BaseState,
-  Operation,
-  AggregateEvent,
-  EventDispatchPolicy,
-  AggregateConfig,
   AggregateCommandsContext,
   AggregateCommandsMaker,
+  AggregateConfig,
+  AggregateEvent,
+  AggregateEventConfig,
+  AggregateReadPolicy,
+  AggregateRepository,
+  BaseState,
   DefaultAggregateEventsConfig,
+  EventDispatchPolicy,
+  Operation,
 } from '../utils/types';
 import type { AggregateStore } from './store';
 
@@ -23,7 +24,7 @@ type AggregateEventConfigBuilder<
   O extends Operation,
   T extends string | undefined,
   S extends BaseState,
-  P
+  P,
 > = {
   /** The event config that is being constructed */
   config: {
@@ -65,7 +66,7 @@ type AggregateEventConfigBuilder<
    * @returns the event builder for chaining
    */
   payload: <Payload>(
-    schema: ZodSchema<Payload>
+    schema: ZodSchema<Payload>,
   ) => AggregateEventConfigBuilder<U, A, O, T, S, Payload>;
   /**
    * Set the policy that determines if the account is authorized for the event
@@ -74,7 +75,7 @@ type AggregateEventConfigBuilder<
    * @returns the event builder for chaining
    */
   policy: (
-    dispatchPolicy: EventDispatchPolicy<U, S, P>
+    dispatchPolicy: EventDispatchPolicy<U, S, P>,
   ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
 } & (O extends 'create'
   ? {
@@ -85,7 +86,7 @@ type AggregateEventConfigBuilder<
        * @returns the event builder for chaining
        */
       constructor: (
-        construct: (payload: P) => Omit<S, keyof BaseState>
+        construct: (payload: P) => Omit<S, keyof BaseState>,
       ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
     }
   : O extends 'update'
@@ -97,7 +98,7 @@ type AggregateEventConfigBuilder<
        * @returns the event builder for chaining
        */
       reducer: (
-        reduce: (state: S, payload: P) => Omit<S, keyof BaseState>
+        reduce: (state: S, payload: P) => Omit<S, keyof BaseState>,
       ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
     }
   : O extends 'delete'
@@ -109,7 +110,7 @@ type AggregateEventConfigBuilder<
        * @returns the event builder for chaining
        */
       destructor: (
-        destruct: (payload: P, state: S) => void
+        destruct: (payload: P, state: S) => void,
       ) => AggregateEventConfigBuilder<U, A, O, T, S, P>;
     }
   : never);
@@ -120,7 +121,7 @@ export type AggregateConfigBuilder<
   S extends BaseState,
   E extends { [fn: string]: AggregateEventConfig<U, A, any, any, S, any> },
   C extends AggregateCommandsMaker<U, A, S, E>,
-  registerable extends boolean = false
+  registerable extends boolean = false,
 > = {
   /** The aggregate config that is being constructed */
   config: AggregateConfig<U, A, S, E, C>;
@@ -136,10 +137,10 @@ export type AggregateConfigBuilder<
     SchemaOptions extends {
       /** indicates if default create, update, and delete events should be defined based on the schema */
       createDefaultEvents: boolean;
-    }
+    },
   >(
     schema: ZodSchema<State>,
-    options?: SchemaOptions
+    options?: SchemaOptions,
   ) => AggregateConfigBuilder<
     U,
     A,
@@ -159,7 +160,7 @@ export type AggregateConfigBuilder<
    * @returns the aggregate builder for chaining
    */
   repository: (
-    repository: AggregateRepository<S>
+    repository: AggregateRepository<S>,
   ) => AggregateConfigBuilder<U, A, S, E, C, registerable>;
   /**
    * Set the events for the aggregate
@@ -167,16 +168,19 @@ export type AggregateConfigBuilder<
    * @param maker a function that takes a event builder and returns a map of events
    * @returns the aggregate builder for chaining
    */
+  policy: (
+    policy: AggregateReadPolicy<U, S>,
+  ) => AggregateConfigBuilder<U, A, S, E, C, registerable>;
   events: <
     Events extends {
       [fn: string]: { config: AggregateEventConfigBuilder<U, A, any, any, S, any>['config'] };
-    }
+    },
   >(
     maker: (
       event: <O extends Operation>(
-        operation: O
-      ) => AggregateEventConfigBuilder<U, A, O, undefined, S, undefined>
-    ) => Events
+        operation: O,
+      ) => AggregateEventConfigBuilder<U, A, O, undefined, S, undefined>,
+    ) => Events,
   ) => AggregateConfigBuilder<
     U,
     A,
@@ -211,7 +215,7 @@ export type AggregateConfigBuilder<
    * @returns the aggregate builder for chaining
    */
   commands: <Commands extends { [fn: string]: (...args: any[]) => any }>(
-    maker: (context: AggregateCommandsContext<U, A, S, E>) => Commands
+    maker: (context: AggregateCommandsContext<U, A, S, E>) => Commands,
   ) => AggregateConfigBuilder<
     U,
     A,
@@ -254,20 +258,22 @@ export const createContext = <U extends AccountInterface>(
   ctx: {
     createEventId?: () => string;
     defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
-  } = {}
+    defaultAggregateReadPolicy?: AggregateReadPolicy<U, BaseState>;
+  } = {},
 ): {
   aggregate: <
     A extends string,
     R extends
       | ((config: AggregateConfig<U, A, any, any, any>) => AggregateStore<U, A, any, any, any>)
-      | undefined
+      | undefined,
   >(
     aggregateType: A,
     options?: {
       createAggregateId?: () => string;
       defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
+      aggregateReadPolicy?: AggregateReadPolicy<U, BaseState>;
       register?: R;
-    }
+    },
   ) => AggregateConfigBuilder<U, A, BaseState, {}, () => {}, R extends undefined ? false : true>;
 } => {
   /**
@@ -281,14 +287,15 @@ export const createContext = <U extends AccountInterface>(
     A extends string,
     R extends
       | ((config: AggregateConfig<U, A, any, any, any>) => AggregateStore<U, A, any, any, any>)
-      | undefined
+      | undefined,
   >(
     aggregateType: A,
     options?: {
       createAggregateId?: () => string;
       defaultEventDispatchPolicy?: EventDispatchPolicy<U, BaseState, unknown>;
+      aggregateReadPolicy?: AggregateReadPolicy<U, BaseState>;
       register?: R;
-    }
+    },
   ) => {
     /**
      * Define a event for the aggregate
@@ -374,6 +381,7 @@ export const createContext = <U extends AccountInterface>(
         aggregateEvents: {},
         defaultEventDispatchPolicy:
           options?.defaultEventDispatchPolicy ?? ctx.defaultEventDispatchPolicy,
+        aggregateReadPolicy: options?.aggregateReadPolicy ?? ctx.defaultAggregateReadPolicy,
       } as AggregateConfig<U, A, any, any, any>,
       schema: (schema, schemaOptions) => {
         if (aggBuilder.config.aggregateSchema) throw new Error('Schema already set');
@@ -400,6 +408,16 @@ export const createContext = <U extends AccountInterface>(
         aggBuilder.config.aggregateRepository = repository;
         return aggBuilder;
       },
+      policy: (policy) => {
+        if (
+          aggBuilder.config.aggregateReadPolicy &&
+          aggBuilder.config.aggregateReadPolicy !== options?.aggregateReadPolicy
+        ) {
+          throw new Error('Read policy already set');
+        }
+        aggBuilder.config.aggregateReadPolicy = policy;
+        return aggBuilder;
+      },
       events: (maker) => {
         if (Object.keys(aggBuilder.config.aggregateEvents).length > 0) {
           throw new Error('Events already set');
@@ -416,8 +434,8 @@ export const createContext = <U extends AccountInterface>(
               type: z.literal(eventConfig.eventType),
               payload: eventConfig.payloadSchema ?? z.any(),
               prevId: eventConfig.operation === 'create' ? z.undefined() : z.string().nonempty(),
-            })
-          )
+            }),
+          ),
         ) as any;
         return aggBuilder;
       },
