@@ -60,6 +60,6 @@
     "titleTemplate": "{title}"
   },
   "engines": {
-    "node": "^18.15.0"
+    "node": "^20.19.6"
   }
 }
